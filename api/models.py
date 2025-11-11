@@ -80,3 +80,14 @@ class ChatResponse(BaseModel):
     citations: List[Dict[str, Any]] = Field(default_factory=list)
     safety: Safety
 
+
+class VoiceChatResponse(BaseModel):
+    transcript: str
+    answer: str
+    audio_base64: str
+    route: Literal["graph", "vector"]
+    facts: List[Dict[str, Any]] = Field(default_factory=list)
+    citations: List[Dict[str, Any]] = Field(default_factory=list)
+    safety: Safety
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+

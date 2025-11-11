@@ -1,14 +1,18 @@
+import asyncio
+import base64
 import copy
+import json
 import logging
 import os
 import tempfile
 import time
 from collections import defaultdict, deque
+from io import BytesIO
 from typing import Any, Deque, Dict, List, Optional, Tuple
 
 from deep_translator import GoogleTranslator  # type: ignore
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,6 +20,18 @@ from fastapi.responses import JSONResponse
 from langdetect import LangDetectException, detect  # type: ignore
 from openai import OpenAI
 from starlette.middleware.base import RequestResponseEndpoint
+
+try:
+    from elevenlabs import VoiceSettings
+    from elevenlabs.client import ElevenLabs
+except Exception:  # pragma: no cover
+    ElevenLabs = None
+    VoiceSettings = None
+
+try:
+    from gtts import gTTS
+except Exception:  # pragma: no cover
+    gTTS = None
 
 os.environ.setdefault("CHROMADB_DISABLE_TELEMETRY", "1")
 
@@ -27,7 +43,7 @@ from .safety import (
 )
 from .router import is_graph_intent, extract_city
 from .rag.retriever import retrieve
-from .models import ChatRequest, ChatResponse, Profile
+from .models import ChatRequest, ChatResponse, Profile, VoiceChatResponse
 
 from .graph import fallback as graph_fallback
 from .graph.cypher import (
@@ -162,6 +178,28 @@ PREGNANCY_ALERT_GUIDANCE_EN = [
     "Contact your obstetrician or emergency services immediately.",
 ]
 
+ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
+ELEVENLABS_MODEL = os.getenv("ELEVENLABS_MODEL", "eleven_multilingual_v2")
+ELEVENLABS_VOICE_DEFAULT = os.getenv("ELEVENLABS_VOICE", "Bella")
+ELEVENLABS_VOICE_MAP = {
+    "en": os.getenv("ELEVENLABS_VOICE_EN", ELEVENLABS_VOICE_DEFAULT),
+    "hi": os.getenv("ELEVENLABS_VOICE_HI", ELEVENLABS_VOICE_DEFAULT),
+    "ta": os.getenv("ELEVENLABS_VOICE_TA", ELEVENLABS_VOICE_DEFAULT),
+    "te": os.getenv("ELEVENLABS_VOICE_TE", ELEVENLABS_VOICE_DEFAULT),
+    "kn": os.getenv("ELEVENLABS_VOICE_KN", ELEVENLABS_VOICE_DEFAULT),
+    "ml": os.getenv("ELEVENLABS_VOICE_ML", ELEVENLABS_VOICE_DEFAULT),
+}
+
+GTTS_LANG_MAP = {
+    "en": "en",
+    "hi": "hi",
+    "ta": "ta",
+    "te": "te",
+    "kn": "kn",
+    "ml": "ml",
+}
+
+_eleven_client: Optional["ElevenLabs"] = None
 
 def detect_language(text: str) -> str:
     try:
@@ -209,6 +247,99 @@ def localize_list(entries: List[str], lang: str, src_lang: str = "en") -> List[s
     if lang == src_lang:
         return entries
     return [translate_text(item, target_lang=lang, src_lang=src_lang) for item in entries]
+
+
+def get_elevenlabs_client() -> Optional["ElevenLabs"]:
+    global _eleven_client
+    if _eleven_client is None and ELEVENLABS_API_KEY and ElevenLabs:
+        try:
+            _eleven_client = ElevenLabs(api_key=ELEVENLABS_API_KEY)
+        except Exception as exc:  # pragma: no cover
+            logger.warning("Failed to initialise ElevenLabs client", extra={"error": str(exc)})
+            _eleven_client = None
+    return _eleven_client
+
+
+def transcribe_audio_bytes(audio_bytes: bytes, *, language_hint: Optional[str] = None) -> str:
+    client = get_openai_client()
+    if not client:
+        raise HTTPException(status_code=503, detail="Speech service unavailable")
+
+    if not audio_bytes:
+        raise HTTPException(status_code=400, detail="Empty audio data received.")
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as tmp:
+        tmp.write(audio_bytes)
+        tmp_path = tmp.name
+
+    try:
+        with open(tmp_path, "rb") as audio_file:
+            payload: Dict[str, Any] = {
+                "model": "whisper-1",
+                "file": audio_file,
+            }
+            if language_hint and language_hint in SUPPORTED_LANG_CODES:
+                payload["language"] = language_hint
+            transcription = client.audio.transcriptions.create(**payload)
+        logger.info(
+            "Speech-to-text processed successfully",
+            extra={"bytes": len(audio_bytes), "language_hint": language_hint},
+        )
+        return transcription.text
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Whisper transcription failed")
+        raise HTTPException(status_code=502, detail=f"STT error: {str(exc)}") from exc
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:  # pragma: no cover
+            pass
+
+
+def synthesize_speech(text: str, language_code: str) -> Tuple[bytes, str, str]:
+    text = text.strip()
+    if not text:
+        return b"", "none", "text/plain"
+
+    # Try ElevenLabs first if configured
+    if ELEVENLABS_API_KEY and ElevenLabs:
+        client = get_elevenlabs_client()
+        voice = ELEVENLABS_VOICE_MAP.get(language_code, ELEVENLABS_VOICE_DEFAULT)
+        if client:
+            try:
+                audio_iter = client.generate(
+                    text=text,
+                    voice=voice,
+                    model=ELEVENLABS_MODEL,
+                    voice_settings=VoiceSettings(stability=0.4, similarity_boost=0.75)
+                    if VoiceSettings
+                    else None,
+                )
+                audio_bytes = b"".join(audio_iter)
+                return audio_bytes, "elevenlabs", "audio/mpeg"
+            except Exception as exc:  # pragma: no cover
+                logger.warning("ElevenLabs synthesis failed", extra={"error": str(exc)})
+
+    if gTTS:
+        lang = GTTS_LANG_MAP.get(language_code, "en")
+        try:
+            tts = gTTS(text=text, lang=lang)
+            buffer = BytesIO()
+            tts.write_to_fp(buffer)
+            return buffer.getvalue(), "gtts", "audio/mpeg"
+        except Exception as exc:  # pragma: no cover
+            logger.warning("gTTS synthesis failed", extra={"error": str(exc), "lang": lang})
+
+    logger.warning("Falling back to text-only response for TTS", extra={"lang": language_code})
+    return b"", "text-only", "text/plain"
+
+
+def encode_audio_base64(audio_bytes: bytes) -> str:
+    if not audio_bytes:
+        return ""
+    return base64.b64encode(audio_bytes).decode("ascii")
 
 
 openai_api_key = os.getenv("OPENAI_API_KEY")
@@ -475,36 +606,15 @@ async def health_check():
 
 
 @app.post("/stt")
-async def speech_to_text(file: UploadFile = File(...)):
+async def speech_to_text(file: UploadFile = File(...), lang: Optional[str] = None):
     """Convert speech to text using OpenAI Whisper"""
-    client = get_openai_client()
-    if not client:
-        raise HTTPException(status_code=503, detail="Speech service unavailable")
-
     if file.content_type and not file.content_type.startswith("audio"):
         raise HTTPException(status_code=400, detail="Unsupported media type. Please upload an audio file.")
 
     try:
         audio_bytes = await file.read()
-        if not audio_bytes:
-            raise HTTPException(status_code=400, detail="Empty audio file received.")
-
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as tmp:
-            tmp.write(audio_bytes)
-            tmp_path = tmp.name
-
-        try:
-            with open(tmp_path, "rb") as audio_file:
-                transcription = client.audio.transcriptions.create(
-                    model="whisper-1",
-                    file=audio_file,
-                )
-        finally:
-            os.unlink(tmp_path)
-
-        logger.info("Speech-to-text processed successfully", extra={"bytes": len(audio_bytes)})
-        return {"text": transcription.text}
-
+        transcript = transcribe_audio_bytes(audio_bytes, language_hint=lang)
+        return {"text": transcript}
     except HTTPException:
         raise
     except Exception as exc:
@@ -512,7 +622,10 @@ async def speech_to_text(file: UploadFile = File(...)):
         raise HTTPException(status_code=502, detail=f"STT error: {str(exc)}") from exc
 
 
-def process_chat_request(request: ChatRequest) -> ChatResponse:
+def process_chat_request(request: ChatRequest) -> Tuple[ChatResponse, str, Dict[str, float]]:
+    timings: Dict[str, float] = {}
+    total_start = time.perf_counter()
+
     text = request.text
     requested_lang = request.lang if request.lang in SUPPORTED_LANG_CODES else None
     detected_lang = detect_language(text) if text else DEFAULT_LANG
@@ -528,9 +641,11 @@ def process_chat_request(request: ChatRequest) -> ChatResponse:
     if source_lang_for_processing != "en":
         processed_text = translate_text(text, target_lang="en", src_lang=source_lang_for_processing)
 
+    safety_start = time.perf_counter()
     safety_result = detect_red_flags(processed_text, "en")
     mental_health_en = detect_mental_health_crisis(processed_text, "en")
     pregnancy_alert_en = detect_pregnancy_emergency(processed_text)
+    timings["safety_analysis"] = time.perf_counter() - safety_start
 
     mental_health_display = mental_health_en
     if target_lang != "en" and mental_health_en["first_aid"]:
@@ -660,7 +775,9 @@ def process_chat_request(request: ChatRequest) -> ChatResponse:
             if providers:
                 facts_en.append({"type": "providers", "data": providers})
 
+        rag_start = time.perf_counter()
         rag_results = retrieve(processed_text, k=3)
+        timings["retrieval"] = time.perf_counter() - rag_start
         context = "\n\n".join([r["chunk"] for r in rag_results])
         citations = [
             {"source": r["source"], "id": r["id"], "topic": r.get("topic")}
@@ -690,6 +807,7 @@ def process_chat_request(request: ChatRequest) -> ChatResponse:
             if not any(f.get("type") == "personalization" for f in facts_en):
                 facts_en.append({"type": "personalization", "data": personalization_notes})
 
+        generation_start = time.perf_counter()
         answer = generate_answer(
             context=context,
             query_en=processed_text,
@@ -699,9 +817,12 @@ def process_chat_request(request: ChatRequest) -> ChatResponse:
             facts=facts_en,
             citations=citations,
         )
+        timings["answer_generation"] = time.perf_counter() - generation_start
 
     else:
+        rag_start = time.perf_counter()
         rag_results = retrieve(processed_text, k=4)
+        timings["retrieval"] = time.perf_counter() - rag_start
         if not rag_results:
             answer = localize_text(
                 "I don't have specific information about that. For health concerns, please consult a healthcare professional.",
@@ -734,6 +855,7 @@ def process_chat_request(request: ChatRequest) -> ChatResponse:
                 )
                 facts_en.append({"type": "personalization", "data": personalization_notes})
 
+            generation_start = time.perf_counter()
             answer = generate_answer(
                 context=context,
                 query_en=processed_text,
@@ -743,6 +865,7 @@ def process_chat_request(request: ChatRequest) -> ChatResponse:
                 facts=facts_en,
                 citations=citations,
             )
+            timings["answer_generation"] = time.perf_counter() - generation_start
 
     if not safety_result["red_flag"]:
         answer += "\n\n" + get_localized_disclaimer(target_lang)
@@ -766,7 +889,8 @@ def process_chat_request(request: ChatRequest) -> ChatResponse:
         "Chat response composed",
         extra={"route": route, "facts": len(response.facts), "target_lang": target_lang},
     )
-    return response
+    timings["total"] = time.perf_counter() - total_start
+    return response, target_lang, timings
 
 
 @app.post("/chat", response_model=ChatResponse)
@@ -782,10 +906,16 @@ async def chat(request: ChatRequest):
         },
     )
     try:
-        response = process_chat_request(request)
+        response, target_lang, timings = process_chat_request(request)
         logger.info(
             "Chat response ready",
-            extra={"route": response.route, "lang": request.lang, "facts": len(response.facts)},
+            extra={
+                "route": response.route,
+                "request_lang": request.lang,
+                "target_lang": target_lang,
+                "facts": len(response.facts),
+                "timings": timings,
+            },
         )
         return response
     except HTTPException:
@@ -795,6 +925,76 @@ async def chat(request: ChatRequest):
         raise HTTPException(
             status_code=500,
             detail="Unable to process your request right now. Please try again in a moment.",
+        ) from exc
+
+
+@app.post("/voice-chat", response_model=VoiceChatResponse)
+async def voice_chat(
+    audio: UploadFile = File(...),
+    lang: Optional[str] = Form(None),
+    profile: Optional[str] = Form(None),
+):
+    """
+    Voice-first endpoint: audio -> Whisper STT -> chat -> TTS audio response
+    """
+    if audio.content_type and not audio.content_type.startswith("audio"):
+        raise HTTPException(status_code=400, detail="Unsupported media type. Please upload an audio file.")
+
+    try:
+        audio_bytes = await audio.read()
+        stt_start = time.perf_counter()
+        transcript = transcribe_audio_bytes(audio_bytes, language_hint=lang)
+        stt_duration = time.perf_counter() - stt_start
+
+        profile_payload: Dict[str, Any] = {}
+        if profile:
+            try:
+                profile_payload = json.loads(profile)
+            except json.JSONDecodeError as exc:
+                raise HTTPException(status_code=400, detail=f"Invalid profile JSON: {exc}") from exc
+
+        chat_request = ChatRequest(
+            text=transcript,
+            lang=lang or DEFAULT_LANG,
+            profile=Profile(**profile_payload),
+        )
+
+        chat_response, target_lang, chat_timings = process_chat_request(chat_request)
+
+        tts_start = time.perf_counter()
+        audio_bytes_out, tts_provider, audio_mime = synthesize_speech(chat_response.answer, target_lang)
+        tts_duration = time.perf_counter() - tts_start
+
+        metadata = {
+            "timings": {
+                **chat_timings,
+                "stt": stt_duration,
+                "tts": tts_duration,
+            },
+            "tts_provider": tts_provider,
+            "audio_mime": audio_mime,
+            "transcript_length": len(transcript),
+            "audio_input_bytes": len(audio_bytes),
+            "audio_output_bytes": len(audio_bytes_out),
+        }
+
+        return VoiceChatResponse(
+            transcript=transcript,
+            answer=chat_response.answer,
+            audio_base64=encode_audio_base64(audio_bytes_out),
+            route=chat_response.route,
+            facts=chat_response.facts,
+            citations=chat_response.citations,
+            safety=chat_response.safety,
+            metadata=metadata,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Voice chat processing failed")
+        raise HTTPException(
+            status_code=500,
+            detail="Voice processing failed. Please try again later.",
         ) from exc
 
 

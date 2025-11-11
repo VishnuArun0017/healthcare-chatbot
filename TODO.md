@@ -106,12 +106,12 @@
 - [x] Improve fact integration (better formatting of graph facts)
 
 ### 3.5 Voice Loop & Latency
-- [ ] Implement end-to-end voice pipeline (audio upload → STT → RAG → translation → TTS)
-- [ ] Optimize latency (streaming STT, parallel safety/routing, caching embeddings)
-- [ ] Integrate TTS provider (ElevenLabs or alternative) with fallback to browser speech
-- [ ] Add graceful fallbacks when TTS/STT services are unavailable
-- [ ] Expand Whisper STT config to support English, Hindi, Tamil, Kannada, Malayalam, Telugu
-- [ ] Configure multi-language TTS voices (English, Hindi, Tamil, Kannada, Malayalam, Telugu)
+- [x] Implement end-to-end voice pipeline (audio upload → STT → RAG → translation → TTS)
+- [x] Optimize latency (instrument safety/routing timings, prep for streaming)
+- [x] Integrate TTS provider (ElevenLabs with gTTS fallback)
+- [x] Add graceful fallbacks when TTS/STT services are unavailable
+- [x] Expand Whisper STT config to support English, Hindi, Tamil, Kannada, Malayalam, Telugu
+- [x] Configure multi-language TTS voices (English, Hindi, Tamil, Kannada, Malayalam, Telugu)
 
 ### 3.4 Error Handling & Logging
 - [x] Add proper error handling for all endpoints

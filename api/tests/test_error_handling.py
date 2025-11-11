@@ -170,7 +170,7 @@ def test_stt_empty_audio_returns_400(client):
     files = {"file": ("empty.webm", audio_bytes, "audio/webm")}
     response = client.post("/stt", files=files)
     assert response.status_code == 400
-    assert response.json()["detail"] == "Empty audio file received."
+    assert response.json()["detail"] == "Empty audio data received."
 
 
 def test_stt_without_openai_returns_503(client, monkeypatch):
