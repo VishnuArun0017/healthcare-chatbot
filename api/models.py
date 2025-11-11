@@ -1,5 +1,6 @@
-from pydantic import BaseModel, Field
-from typing import List, Optional, Literal, Dict, Any
+from typing import Any, Dict, List, Literal, Optional
+
+from pydantic import BaseModel, Field, field_validator
 
 
 class Profile(BaseModel):
@@ -10,11 +11,37 @@ class Profile(BaseModel):
     pregnancy: bool = False
     city: Optional[str] = None
 
+    @field_validator("age")
+    @classmethod
+    def validate_age(cls, value: Optional[int]):
+        if value is None:
+            return value
+        if value < 0:
+            raise ValueError("Age cannot be negative")
+        if value > 130:
+            raise ValueError("Age must be realistic (≤130)")
+        return value
+
+    @field_validator("city")
+    @classmethod
+    def normalize_city(cls, value: Optional[str]):
+        if value is None:
+            return value
+        normalized = value.strip()
+        return normalized or None
+
 
 class ChatRequest(BaseModel):
     text: str
     lang: Literal["en", "hi", "ta", "te", "kn", "ml"] = "en"
     profile: Profile
+
+    @field_validator("text")
+    @classmethod
+    def text_not_blank(cls, value: str) -> str:
+        if not value or not value.strip():
+            raise ValueError("Query text must not be empty")
+        return value.strip()
 
 
 class MentalHealthSafety(BaseModel):

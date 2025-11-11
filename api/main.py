@@ -1,14 +1,21 @@
 import copy
+import logging
 import os
 import tempfile
-from typing import Any, Dict, List, Optional, Tuple
+import time
+from collections import defaultdict, deque
+from typing import Any, Deque, Dict, List, Optional, Tuple
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.middleware.cors import CORSMiddleware
 from deep_translator import GoogleTranslator  # type: ignore
+from dotenv import load_dotenv
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from langdetect import LangDetectException, detect  # type: ignore
 from openai import OpenAI
-from dotenv import load_dotenv
+from starlette.middleware.base import RequestResponseEndpoint
 
 os.environ.setdefault("CHROMADB_DISABLE_TELEMETRY", "1")
 
@@ -33,6 +40,13 @@ from .graph.client import neo4j_client
 
 load_dotenv()
 
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=LOG_LEVEL,
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+)
+logger = logging.getLogger("health_assistant")
+
 app = FastAPI(title="Health Assistant API")
 
 
@@ -48,6 +62,79 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+class SimpleRateLimiter:
+    def __init__(self, limit: int = 30, window: int = 60) -> None:
+        self.limit = limit
+        self.window = window
+        self.requests: Dict[str, Deque[float]] = defaultdict(deque)
+
+    def configure(self, *, limit: Optional[int] = None, window: Optional[int] = None) -> None:
+        if limit is not None:
+            self.limit = limit
+        if window is not None:
+            self.window = window
+
+    async def __call__(self, request: Request, call_next: RequestResponseEndpoint):
+        if os.getenv("DISABLE_RATE_LIMIT") == "1" or self.limit <= 0:
+            return await call_next(request)
+
+        identifier = request.client.host if request.client else "anonymous"
+        now = time.time()
+        bucket = self.requests[identifier]
+
+        while bucket and now - bucket[0] > self.window:
+            bucket.popleft()
+
+        if len(bucket) >= self.limit:
+            logger.warning("Rate limit exceeded", extra={"client": identifier})
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Too many requests. Please try again later."},
+            )
+
+        bucket.append(now)
+        response = await call_next(request)
+        return response
+
+
+rate_limiter = SimpleRateLimiter(
+    limit=int(os.getenv("RATE_LIMIT", "30")),
+    window=int(os.getenv("RATE_WINDOW", "60")),
+)
+
+if os.getenv("DISABLE_RATE_LIMIT") != "1":
+    app.middleware("http")(rate_limiter)
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    errors = exc.errors()
+    for error in errors:
+        ctx = error.get("ctx")
+        if ctx and "error" in ctx:
+            ctx["error"] = str(ctx["error"])
+
+    logger.warning(
+        "Validation error",
+        extra={"path": request.url.path, "errors": errors, "body": exc.body},
+    )
+    payload = jsonable_encoder({"detail": errors})
+    return JSONResponse(status_code=422, content=payload)
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    logger.warning(
+        "HTTP error",
+        extra={"path": request.url.path, "status_code": exc.status_code, "detail": exc.detail},
+    )
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    logger.exception("Unhandled exception", extra={"path": request.url.path})
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 LANGUAGE_LABELS: Dict[str, str] = {
     "en": "English",
@@ -97,7 +184,10 @@ def translate_text(text: str, target_lang: str, src_lang: Optional[str] = None) 
         )
         return translator.translate(text)
     except Exception as exc:
-        print(f"Translation error ({src_lang}->{target_lang}): {exc}")
+        logger.warning(
+            "Translation error",
+            extra={"source": src_lang or "auto", "target": target_lang, "error": str(exc)},
+        )
         return text
 
 
@@ -132,7 +222,7 @@ def get_openai_client() -> Optional[OpenAI]:
         try:
             _openai_client = OpenAI(api_key=openai_api_key)
         except Exception as exc:
-            print(f"OpenAI client initialization error: {exc}")
+            logger.error("OpenAI client initialization error", extra={"error": str(exc)})
             _openai_client = None
     return _openai_client
 
@@ -142,7 +232,10 @@ def ensure_neo4j() -> bool:
     if _neo4j_available is None:
         try:
             _neo4j_available = neo4j_client.connect()
-        except Exception:
+            if not _neo4j_available:
+                logger.warning("Neo4j connection unavailable, falling back to in-memory graph")
+        except Exception as exc:
+            logger.error("Neo4j connection error", extra={"error": str(exc)})
             _neo4j_available = False
     return bool(_neo4j_available)
 
@@ -176,8 +269,8 @@ def graph_get_red_flags(symptoms: List[str]) -> List[Dict[str, Any]]:
     if ensure_neo4j():
         try:
             return neo4j_get_red_flags(symptoms)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.error("Neo4j red flag query failed", extra={"error": str(exc)})
     return graph_fallback.get_red_flags(symptoms)
 
 
@@ -185,8 +278,8 @@ def graph_get_contraindications(user_conditions: List[str]) -> List[Dict[str, An
     if ensure_neo4j():
         try:
             return neo4j_get_contraindications(user_conditions)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.error("Neo4j contraindications query failed", extra={"error": str(exc)})
     return graph_fallback.get_contraindications(user_conditions)
 
 
@@ -194,8 +287,8 @@ def graph_get_providers(city: str) -> List[Dict[str, Any]]:
     if ensure_neo4j():
         try:
             return neo4j_get_providers_in_city(city)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.error("Neo4j provider query failed", extra={"error": str(exc), "city": city})
     return graph_fallback.get_providers_in_city(city)
 
 
@@ -206,8 +299,8 @@ def graph_get_safe_actions(user_conditions: List[str]) -> List[Dict[str, Any]]:
     if ensure_neo4j():
         try:
             return neo4j_get_safe_actions()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.error("Neo4j safe actions query failed", extra={"error": str(exc)})
     return graph_fallback.get_safe_actions(user_conditions)
 
 
@@ -298,6 +391,7 @@ def generate_answer(
     """Generate answer using OpenAI or fallback"""
     client = get_openai_client()
     if not client:
+        logger.warning("OpenAI client unavailable, returning fallback response")
         return localize_text(FALLBACK_MESSAGE_EN, target_lang=target_lang)
 
     fact_summary, _ = build_fact_blocks(facts)
@@ -359,8 +453,10 @@ Produce a helpful, non-diagnostic response following the required structure and 
         )
         return response.choices[0].message.content
     except Exception as e:
-        print(f"OpenAI error: {e}")
-        error_message = "I'm experiencing technical difficulties. For health emergencies, please call 108 or visit your nearest hospital."
+        logger.error("OpenAI completion error", extra={"error": str(e)})
+        error_message = (
+            "I'm experiencing technical difficulties. For health emergencies, please call 108 or visit your nearest hospital."
+        )
         return localize_text(error_message, target_lang=target_lang)
 
 
@@ -383,34 +479,40 @@ async def speech_to_text(file: UploadFile = File(...)):
     """Convert speech to text using OpenAI Whisper"""
     client = get_openai_client()
     if not client:
-        raise HTTPException(status_code=503, detail="OpenAI API key not configured")
-    
+        raise HTTPException(status_code=503, detail="Speech service unavailable")
+
+    if file.content_type and not file.content_type.startswith("audio"):
+        raise HTTPException(status_code=400, detail="Unsupported media type. Please upload an audio file.")
+
     try:
         audio_bytes = await file.read()
-        
+        if not audio_bytes:
+            raise HTTPException(status_code=400, detail="Empty audio file received.")
+
         with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as tmp:
             tmp.write(audio_bytes)
             tmp_path = tmp.name
-        
-        with open(tmp_path, "rb") as audio_file:
-            transcription = client.audio.transcriptions.create(
-                model="whisper-1",
-                file=audio_file
-            )
-        
-        os.unlink(tmp_path)
-        
+
+        try:
+            with open(tmp_path, "rb") as audio_file:
+                transcription = client.audio.transcriptions.create(
+                    model="whisper-1",
+                    file=audio_file,
+                )
+        finally:
+            os.unlink(tmp_path)
+
+        logger.info("Speech-to-text processed successfully", extra={"bytes": len(audio_bytes)})
         return {"text": transcription.text}
-    
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"STT error: {str(e)}")
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Speech-to-text processing failed")
+        raise HTTPException(status_code=502, detail=f"STT error: {str(exc)}") from exc
 
 
-@app.post("/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest):
-    """
-    Main chat endpoint with routing, safety detection, and RAG
-    """
+def process_chat_request(request: ChatRequest) -> ChatResponse:
     text = request.text
     requested_lang = request.lang if request.lang in SUPPORTED_LANG_CODES else None
     detected_lang = detect_language(text) if text else DEFAULT_LANG
@@ -426,7 +528,6 @@ async def chat(request: ChatRequest):
     if source_lang_for_processing != "en":
         processed_text = translate_text(text, target_lang="en", src_lang=source_lang_for_processing)
 
-    # Step 1: Safety detection (operating on English text)
     safety_result = detect_red_flags(processed_text, "en")
     mental_health_en = detect_mental_health_crisis(processed_text, "en")
     pregnancy_alert_en = detect_pregnancy_emergency(processed_text)
@@ -448,7 +549,6 @@ async def chat(request: ChatRequest):
         "guidance": pregnancy_guidance_display,
     }
 
-    # Step 2: Determine routing
     use_graph = is_graph_intent(processed_text)
 
     facts_en: List[Dict[str, Any]] = []
@@ -456,14 +556,12 @@ async def chat(request: ChatRequest):
     answer = ""
     route = "vector"
 
-    # Step 3: If red flags detected, always include graph red-flag query
     if safety_result["red_flag"]:
         symptoms = extract_symptoms(processed_text)
         red_flag_results = graph_get_red_flags(symptoms)
         if red_flag_results:
             facts_en.append({"type": "red_flags", "data": red_flag_results})
 
-    # Step 3b: Mental health crisis guidance
     if mental_health_en["crisis"]:
         facts_en.append(
             {
@@ -475,7 +573,6 @@ async def chat(request: ChatRequest):
             }
         )
 
-    # Step 3c: Pregnancy specific alert messaging
     if pregnancy_alert_en["concern"]:
         facts_en.append(
             {
@@ -487,7 +584,6 @@ async def chat(request: ChatRequest):
             }
         )
 
-    # Step 4: Execute appropriate query path
     if use_graph:
         route = "graph"
 
@@ -648,7 +744,6 @@ async def chat(request: ChatRequest):
                 citations=citations,
             )
 
-    # Add disclaimer if not emergency
     if not safety_result["red_flag"]:
         answer += "\n\n" + get_localized_disclaimer(target_lang)
 
@@ -660,13 +755,47 @@ async def chat(request: ChatRequest):
         "pregnancy": pregnancy_alert_display,
     }
 
-    return ChatResponse(
+    response = ChatResponse(
         answer=answer,
         route=route,
         facts=facts_response,
         citations=citations,
         safety=safety_payload,
     )
+    logger.debug(
+        "Chat response composed",
+        extra={"route": route, "facts": len(response.facts), "target_lang": target_lang},
+    )
+    return response
+
+
+@app.post("/chat", response_model=ChatResponse)
+async def chat(request: ChatRequest):
+    """
+    Main chat endpoint with routing, safety detection, and RAG
+    """
+    logger.info(
+        "Received chat request",
+        extra={
+            "lang": request.lang,
+            "profile": request.profile.model_dump(exclude_none=True),
+        },
+    )
+    try:
+        response = process_chat_request(request)
+        logger.info(
+            "Chat response ready",
+            extra={"route": response.route, "lang": request.lang, "facts": len(response.facts)},
+        )
+        return response
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Chat processing failed")
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to process your request right now. Please try again in a moment.",
+        ) from exc
 
 
 if __name__ == "__main__":
