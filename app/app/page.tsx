@@ -4,7 +4,76 @@ import { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
 import { Mic, Send, Settings, AlertTriangle, Phone, X } from 'lucide-react';
 
+type LangCode = 'en' | 'hi' | 'ta' | 'te' | 'kn' | 'ml';
+type SexOption = 'male' | 'female' | 'other';
+
 const API_BASE = 'http://localhost:8000';
+
+const LANGUAGE_OPTIONS: Array<{
+  value: LangCode;
+  label: string;
+  speechLang: string;
+  placeholder: string;
+  introTitle: string;
+  introSubtitle: string;
+}> = [
+  {
+    value: 'en',
+    label: 'English',
+    speechLang: 'en-US',
+    placeholder: 'Type your health question...',
+    introTitle: 'How can I help you today?',
+    introSubtitle: 'Ask about symptoms, self-care, or when to see a doctor',
+  },
+  {
+    value: 'hi',
+    label: 'हिन्दी',
+    speechLang: 'hi-IN',
+    placeholder: 'अपना स्वास्थ्य प्रश्न टाइप करें...',
+    introTitle: 'आज मैं आपकी कैसे मदद कर सकता हूं?',
+    introSubtitle: 'लक्षणों, स्व-देखभाल, या डॉक्टर को कब दिखाना है के बारे में पूछें',
+  },
+  {
+    value: 'ta',
+    label: 'தமிழ்',
+    speechLang: 'ta-IN',
+    placeholder: 'உங்கள் சுகாதார கேள்வியை பதிவு செய்யவும்...',
+    introTitle: 'இன்று நான் எப்படி உதவலாம்?',
+    introSubtitle: 'அறிகுறிகள், சுய பராமரிப்பு அல்லது டாக்டரை எப்போது பார்க்க வேண்டும் என்று கேளுங்கள்',
+  },
+  {
+    value: 'te',
+    label: 'తెలుగు',
+    speechLang: 'te-IN',
+    placeholder: 'మీ ఆరోగ్య ప్రశ్నను టైప్ చేయండి...',
+    introTitle: 'ఈ రోజు నేను ఎలా సహాయం చేయగలను?',
+    introSubtitle: 'లక్షణాలు, స్వీయ సంరక్షణ లేదా డాక్టర్‌ని ఎప్పుడు కలవాలో అడగండి',
+  },
+  {
+    value: 'kn',
+    label: 'ಕನ್ನಡ',
+    speechLang: 'kn-IN',
+    placeholder: 'ನಿಮ್ಮ ಆರೋಗ್ಯ ಪ್ರಶ್ನೆಯನ್ನು ಟೈಪ್ ಮಾಡಿ...',
+    introTitle: 'ಇಂದು ನಾನು ಹೇಗೆ ಸಹಾಯ ಮಾಡಬಹುದು?',
+    introSubtitle: 'ಲಕ್ಷಣಗಳು, ಸ್ವಚ್ಛ ಆರೈಕೆ ಅಥವಾ ವೈದ್ಯರನ್ನು ಯಾವಾಗ ಭೇಟಿಯಾಗಬೇಕು ಎಂದು ಕೇಳಿ',
+  },
+  {
+    value: 'ml',
+    label: 'മലയാളം',
+    speechLang: 'ml-IN',
+    placeholder: 'നിങ്ങളുടെ ആരോഗ്യ ചോദ്യങ്ങൾ ടൈപ്പ് ചെയ്യുക...',
+    introTitle: 'ഇന്ന് ഞാൻ നിങ്ങളെ എങ്ങനെ സഹായിക്കാം?',
+    introSubtitle: 'ലക്ഷണങ്ങൾ, സ്വയംപരിചരണം, ഡോക്ടറെ കാണേണ്ട സമയം എന്നിവയെക്കുറിച്ച് ചോദിക്കൂ',
+  },
+];
+
+const LANGUAGE_SPEECH_MAP: Record<LangCode, string> = LANGUAGE_OPTIONS.reduce(
+  (acc, option) => {
+    acc[option.value] = option.speechLang;
+    return acc;
+  },
+  {} as Record<LangCode, string>
+);
 
 const defaultProfile: Profile = {
   diabetes: false,
@@ -23,8 +92,6 @@ interface Message {
   safety?: any;
 }
 
-type SexOption = 'male' | 'female' | 'other';
-
 interface Profile {
   diabetes: boolean;
   hypertension: boolean;
@@ -39,9 +106,12 @@ export default function Home() {
   const [input, setInput] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [lang, setLang] = useState<'en' | 'hi'>('en');
+  const [lang, setLang] = useState<LangCode>('en');
   const [showProfile, setShowProfile] = useState(false);
   const [profile, setProfile] = useState<Profile>(defaultProfile);
+
+  const currentLanguage =
+    LANGUAGE_OPTIONS.find((option) => option.value === lang) ?? LANGUAGE_OPTIONS[0];
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -152,7 +222,7 @@ export default function Home() {
       // Text-to-speech for response
       if ('speechSynthesis' in window) {
         const utterance = new SpeechSynthesisUtterance(response.data.answer);
-        utterance.lang = lang === 'hi' ? 'hi-IN' : 'en-US';
+        utterance.lang = LANGUAGE_SPEECH_MAP[lang] ?? 'en-US';
         utterance.rate = 0.9;
         window.speechSynthesis.speak(utterance);
       }
@@ -184,24 +254,23 @@ export default function Home() {
           <p className="text-sm text-gray-500">AI-powered health information - Not medical advice</p>
         </div>
         <div className="flex items-center gap-4">
-          {/* Language Toggle */}
-          <div className="flex bg-gray-200 rounded-lg p-1">
-            <button
-              onClick={() => setLang('en')}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition ${
-                lang === 'en' ? 'bg-white text-indigo-600 shadow' : 'text-gray-600'
-              }`}
+          {/* Language Picker */}
+          <div className="flex items-center gap-2">
+            <label htmlFor="language-select" className="text-sm text-gray-600">
+              Language:
+            </label>
+            <select
+              id="language-select"
+              value={lang}
+              onChange={(e) => setLang(e.target.value as LangCode)}
+              className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
             >
-              English
-            </button>
-            <button
-              onClick={() => setLang('hi')}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition ${
-                lang === 'hi' ? 'bg-white text-indigo-600 shadow' : 'text-gray-600'
-              }`}
-            >
-              हिंदी
-            </button>
+              {LANGUAGE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           </div>
 
           {/* Profile Button */}
@@ -220,12 +289,10 @@ export default function Home() {
           <div className="text-center mt-20">
             <div className="inline-block p-6 bg-white rounded-2xl shadow-lg">
               <h2 className="text-xl font-semibold text-gray-800 mb-2">
-                {lang === 'en' ? 'How can I help you today?' : 'आज मैं आपकी कैसे मदद कर सकता हूं?'}
+                {currentLanguage.introTitle}
               </h2>
               <p className="text-gray-600">
-                {lang === 'en' 
-                  ? 'Ask about symptoms, self-care, or when to see a doctor'
-                  : 'लक्षणों, स्व-देखभाल, या डॉक्टर को कब दिखाना है के बारे में पूछें'}
+                {currentLanguage.introSubtitle}
               </p>
             </div>
           </div>
@@ -501,7 +568,7 @@ export default function Home() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyPress={handleKeyPress}
-            placeholder={lang === 'en' ? 'Type your health question...' : 'अपना स्वास्थ्य प्रश्न टाइप करें...'}
+            placeholder={currentLanguage.placeholder}
             className="flex-1 px-6 py-4 rounded-full border-2 border-gray-200 focus:border-indigo-500 focus:outline-none text-gray-800"
             disabled={isLoading}
           />

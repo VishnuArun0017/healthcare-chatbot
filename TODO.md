@@ -98,17 +98,20 @@
 - [x] Improve contraindication filtering based on profile
 
 ### 3.3 Response Quality
-- [ ] Improve LLM prompts (better structure, clearer guidelines)
-- [ ] Add Hindi language support in responses (not just UI)
-- [ ] Add automatic language detection & translation pipeline (Whisper → English → target language)
-- [ ] Add source citations in responses (link to original sources)
-- [ ] Improve fact integration (better formatting of graph facts)
+- [x] Improve LLM prompts (better structure, clearer guidelines)
+- [x] Add Hindi language support in responses (not just UI)
+- [x] Extend translation pipeline to Tamil, Kannada, Malayalam, and Telugu
+- [x] Add automatic language detection & translation pipeline (Whisper → English → target language)
+- [x] Add source citations in responses (link to original sources)
+- [x] Improve fact integration (better formatting of graph facts)
 
 ### 3.5 Voice Loop & Latency
 - [ ] Implement end-to-end voice pipeline (audio upload → STT → RAG → translation → TTS)
 - [ ] Optimize latency (streaming STT, parallel safety/routing, caching embeddings)
 - [ ] Integrate TTS provider (ElevenLabs or alternative) with fallback to browser speech
 - [ ] Add graceful fallbacks when TTS/STT services are unavailable
+- [ ] Expand Whisper STT config to support English, Hindi, Tamil, Kannada, Malayalam, Telugu
+- [ ] Configure multi-language TTS voices (English, Hindi, Tamil, Kannada, Malayalam, Telugu)
 
 ### 3.4 Error Handling & Logging
 - [ ] Add proper error handling for all endpoints

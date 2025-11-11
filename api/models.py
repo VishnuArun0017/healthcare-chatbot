@@ -13,7 +13,7 @@ class Profile(BaseModel):
 
 class ChatRequest(BaseModel):
     text: str
-    lang: Literal["en", "hi"] = "en"
+    lang: Literal["en", "hi", "ta", "te", "kn", "ml"] = "en"
     profile: Profile
 
 

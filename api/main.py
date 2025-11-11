@@ -1,9 +1,13 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from openai import OpenAI
-import tempfile
+import copy
 import os
-from typing import List, Dict, Any, Optional
+import tempfile
+from typing import Any, Dict, List, Optional, Tuple
+
+from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from deep_translator import GoogleTranslator  # type: ignore
+from langdetect import LangDetectException, detect  # type: ignore
+from openai import OpenAI
 from dotenv import load_dotenv
 
 os.environ.setdefault("CHROMADB_DISABLE_TELEMETRY", "1")
@@ -45,10 +49,92 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-openai_api_key = os.getenv("OPENAI_API_KEY")
-client = OpenAI(api_key=openai_api_key) if openai_api_key else None
+LANGUAGE_LABELS: Dict[str, str] = {
+    "en": "English",
+    "hi": "Hindi",
+    "ta": "Tamil",
+    "te": "Telugu",
+    "kn": "Kannada",
+    "ml": "Malayalam",
+}
 
+SUPPORTED_LANG_CODES = set(LANGUAGE_LABELS.keys())
+DEFAULT_LANG = "en"
+
+FALLBACK_MESSAGE_EN = (
+    "I'm here to help with health questions. Please note: I cannot provide medical diagnosis. "
+    "For emergencies, call 108 or visit the nearest hospital."
+)
+
+DISCLAIMER_EN = (
+    "⚠️ This is general information only, not medical advice. Consult a healthcare professional for proper diagnosis and treatment."
+)
+
+PREGNANCY_ALERT_GUIDANCE_EN = [
+    "Severe pregnancy symptoms need urgent medical review.",
+    "Contact your obstetrician or emergency services immediately.",
+]
+
+
+def detect_language(text: str) -> str:
+    try:
+        return detect(text)
+    except LangDetectException:
+        return "en"
+
+
+def translate_text(text: str, target_lang: str, src_lang: Optional[str] = None) -> str:
+    if not text.strip():
+        return text
+
+    if src_lang and src_lang == target_lang:
+        return text
+
+    try:
+        translator = GoogleTranslator(
+            source=src_lang if src_lang else "auto",
+            target=target_lang,
+        )
+        return translator.translate(text)
+    except Exception as exc:
+        print(f"Translation error ({src_lang}->{target_lang}): {exc}")
+        return text
+
+
+def localize_text(text: str, target_lang: str, src_lang: str = "en") -> str:
+    if target_lang == src_lang:
+        return text
+    return translate_text(text, target_lang=target_lang, src_lang=src_lang)
+
+
+def get_language_label(code: str) -> str:
+    return LANGUAGE_LABELS.get(code, LANGUAGE_LABELS[DEFAULT_LANG])
+
+
+def get_localized_disclaimer(lang: str) -> str:
+    return localize_text(DISCLAIMER_EN, target_lang=lang)
+
+
+def localize_list(entries: List[str], lang: str, src_lang: str = "en") -> List[str]:
+    if lang == src_lang:
+        return entries
+    return [translate_text(item, target_lang=lang, src_lang=src_lang) for item in entries]
+
+
+openai_api_key = os.getenv("OPENAI_API_KEY")
+_openai_client: Optional[OpenAI] = None
 _neo4j_available: Optional[bool] = None
+
+
+def get_openai_client() -> Optional[OpenAI]:
+    global _openai_client
+    if _openai_client is None and openai_api_key:
+        try:
+            _openai_client = OpenAI(api_key=openai_api_key)
+        except Exception as exc:
+            print(f"OpenAI client initialization error: {exc}")
+            _openai_client = None
+    return _openai_client
 
 
 def ensure_neo4j() -> bool:
@@ -125,10 +211,107 @@ def graph_get_safe_actions(user_conditions: List[str]) -> List[Dict[str, Any]]:
     return graph_fallback.get_safe_actions(user_conditions)
 
 
-def generate_answer(context: str, query: str, lang: str = "en") -> str:
+def build_fact_blocks(facts: List[Dict[str, Any]]) -> Tuple[str, str]:
+    """
+    Prepare fact summaries for LLM context and for direct display.
+    """
+    if not facts:
+        return "", ""
+
+    llm_lines: List[str] = []
+    display_lines: List[str] = []
+
+    for fact in facts:
+        f_type = fact.get("type")
+        data = fact.get("data", [])
+
+        if f_type == "contraindications":
+            for entry in data:
+                condition = entry.get("condition")
+                avoids = ", ".join(entry.get("avoid", []))
+                llm_lines.append(f"- Contraindications for {condition}: avoid {avoids}")
+                display_lines.append(f"{condition}: avoid {avoids}")
+        elif f_type == "safe_actions":
+            for entry in data:
+                condition = entry.get("condition")
+                actions = ", ".join(entry.get("actions", []))
+                llm_lines.append(f"- Safe actions for {condition}: {actions}")
+                display_lines.append(f"{condition}: {actions}")
+        elif f_type == "mental_health_crisis":
+            matched = ", ".join(data.get("matched", []))
+            actions = "; ".join(data.get("actions", []))
+            llm_lines.append(f"- Mental health crisis detected (phrases: {matched}). First aid: {actions}")
+            display_lines.append(f"Mental health crisis phrases ({matched}) → {actions}")
+        elif f_type == "pregnancy_alert":
+            matched = ", ".join(data.get("matched", []))
+            guidance = "; ".join(data.get("guidance", []))
+            llm_lines.append(f"- Pregnancy alert indicators ({matched}). Guidance: {guidance}")
+            display_lines.append(f"Pregnancy alert ({matched}) → {guidance}")
+        elif f_type == "providers":
+            providers = "; ".join(
+                f"{item.get('provider')} ({item.get('mode', 'care')})"
+                for item in data
+            )
+            llm_lines.append(f"- Local providers: {providers}")
+            display_lines.append(f"Providers → {providers}")
+        elif f_type == "red_flags":
+            for entry in data:
+                symptom = entry.get("symptom")
+                conditions = ", ".join(entry.get("conditions", []))
+                llm_lines.append(f"- Red flag: {symptom} → {conditions}")
+                display_lines.append(f"{symptom} → {conditions}")
+        elif f_type == "personalization":
+            for note in data:
+                llm_lines.append(f"- Personalization note: {note}")
+                display_lines.append(note)
+
+    llm_summary = "\n".join(llm_lines)
+    display_summary = "\n".join(display_lines)
+    return llm_summary, display_summary
+
+
+def localize_fact_guidance(facts: List[Dict[str, Any]], lang: str) -> List[Dict[str, Any]]:
+    if lang == "en":
+        return facts
+
+    localized = copy.deepcopy(facts)
+    for fact in localized:
+        if fact.get("type") == "mental_health_crisis":
+            actions = fact.get("data", {}).get("actions", [])
+            fact["data"]["actions"] = localize_list(actions, lang)
+        elif fact.get("type") == "pregnancy_alert":
+            guidance = fact.get("data", {}).get("guidance", [])
+            fact["data"]["guidance"] = localize_list(guidance, lang)
+    return localized
+
+
+def generate_answer(
+    *,
+    context: str,
+    query_en: str,
+    target_lang: str,
+    language_label: str,
+    original_query: str,
+    facts: List[Dict[str, Any]],
+    citations: List[Dict[str, Any]],
+) -> str:
     """Generate answer using OpenAI or fallback"""
+    client = get_openai_client()
     if not client:
-        return "I'm here to help with health questions. Please note: I cannot provide medical diagnosis. For emergencies, call 108 or visit the nearest hospital."
+        return localize_text(FALLBACK_MESSAGE_EN, target_lang=target_lang)
+
+    fact_summary, _ = build_fact_blocks(facts)
+
+    citations_section = ""
+    if citations:
+        lines = []
+        for idx, cite in enumerate(citations, start=1):
+            source = cite.get("source", "unknown")
+            topic = cite.get("topic")
+            cite_id = cite.get("id")
+            label = f"{source}" if not topic else f"{topic} ({source})"
+            lines.append(f"[{idx}] {label} — {cite_id}")
+        citations_section = "\n".join(lines)
     
     system_prompt = """You are a helpful health assistant. Provide clear, accurate health information based on the context provided.
 
@@ -137,23 +320,32 @@ IMPORTANT GUIDELINES:
 - Provide general health information only
 - Always include a disclaimer about seeking professional medical care
 - Be empathetic and supportive
-- Keep answers concise (3-4 short paragraphs)
+- Keep answers concise (3-4 short paragraphs) plus a short source list
 - Structure answers as:
-  1. What it could mean (non-diagnostic)
-  2. Safe self-care steps
-  3. When to see a doctor
-  4. Brief disclaimer
+  1. What the symptoms might indicate (non-diagnostic)
+  2. Safe self-care guidance
+  3. When to escalate to a healthcare professional
+  4. Mandatory disclaimer
+- Integrate database facts when helpful (contraindications, safe actions, providers, alerts)
+- If facts indicate emergencies or crises, emphasise them clearly
+- Respond in the target language exactly as requested: use simple, clear Hindi for Hindi; otherwise English
+- End with a 'Sources:' section referencing the provided citations by number."""
 
-For Hindi responses, use simple, clear Hindi."""
-
-    user_prompt = f"""Context from medical knowledge base:
+    user_prompt = f"""Context from medical knowledge base (in English):
 {context}
 
-User question: {query}
+Structured facts to emphasise:
+{fact_summary or 'None provided.'}
 
-Language: {"Hindi" if lang == "hi" else "English"}
+User question (original): {original_query}
+User question (English): {query_en}
 
-Provide a helpful, non-diagnostic response."""
+Language for response: {language_label}
+
+Citations to reference:
+{citations_section or 'No citations supplied.'}
+
+Produce a helpful, non-diagnostic response following the required structure and include a Sources section."""
 
     try:
         response = client.chat.completions.create(
@@ -168,14 +360,15 @@ Provide a helpful, non-diagnostic response."""
         return response.choices[0].message.content
     except Exception as e:
         print(f"OpenAI error: {e}")
-        return "I'm experiencing technical difficulties. For health emergencies, please call 108 or visit your nearest hospital."
+        error_message = "I'm experiencing technical difficulties. For health emergencies, please call 108 or visit your nearest hospital."
+        return localize_text(error_message, target_lang=target_lang)
 
 
 @app.get("/health")
 async def health_check():
     return {
         "ok": True,
-        "openai_configured": client is not None,
+        "openai_configured": get_openai_client() is not None,
         "services": {
             "rag": True,
             "graph": ensure_neo4j(),
@@ -188,6 +381,7 @@ async def health_check():
 @app.post("/stt")
 async def speech_to_text(file: UploadFile = File(...)):
     """Convert speech to text using OpenAI Whisper"""
+    client = get_openai_client()
     if not client:
         raise HTTPException(status_code=503, detail="OpenAI API key not configured")
     
@@ -218,63 +412,86 @@ async def chat(request: ChatRequest):
     Main chat endpoint with routing, safety detection, and RAG
     """
     text = request.text
-    lang = request.lang
+    requested_lang = request.lang if request.lang in SUPPORTED_LANG_CODES else None
+    detected_lang = detect_language(text) if text else DEFAULT_LANG
+    detected_supported = detected_lang if detected_lang in SUPPORTED_LANG_CODES else None
+    target_lang = requested_lang or detected_supported or DEFAULT_LANG
+    language_label = get_language_label(target_lang)
+
     profile: Profile = request.profile
     personalization_notes = build_personalization_notes(profile)
-    
-    # Step 1: Safety detection
-    safety_result = detect_red_flags(text, lang)
-    mental_health = detect_mental_health_crisis(text, lang)
-    pregnancy_alert = detect_pregnancy_emergency(text)
-    
+
+    processed_text = text
+    source_lang_for_processing = detected_supported or DEFAULT_LANG
+    if source_lang_for_processing != "en":
+        processed_text = translate_text(text, target_lang="en", src_lang=source_lang_for_processing)
+
+    # Step 1: Safety detection (operating on English text)
+    safety_result = detect_red_flags(processed_text, "en")
+    mental_health_en = detect_mental_health_crisis(processed_text, "en")
+    pregnancy_alert_en = detect_pregnancy_emergency(processed_text)
+
+    mental_health_display = mental_health_en
+    if target_lang != "en" and mental_health_en["first_aid"]:
+        mental_health_display = {
+            **mental_health_en,
+            "first_aid": localize_list(mental_health_en["first_aid"], target_lang),
+        }
+
+    pregnancy_guidance_display = (
+        PREGNANCY_ALERT_GUIDANCE_EN
+        if target_lang == "en"
+        else localize_list(PREGNANCY_ALERT_GUIDANCE_EN, target_lang)
+    )
+    pregnancy_alert_display = {
+        **pregnancy_alert_en,
+        "guidance": pregnancy_guidance_display,
+    }
+
     # Step 2: Determine routing
-    use_graph = is_graph_intent(text)
-    
-    facts = []
-    citations = []
+    use_graph = is_graph_intent(processed_text)
+
+    facts_en: List[Dict[str, Any]] = []
+    citations: List[Dict[str, Any]] = []
     answer = ""
-    
+    route = "vector"
+
     # Step 3: If red flags detected, always include graph red-flag query
     if safety_result["red_flag"]:
-        symptoms = extract_symptoms(text)
+        symptoms = extract_symptoms(processed_text)
         red_flag_results = graph_get_red_flags(symptoms)
-        
         if red_flag_results:
-            facts.append({
-                "type": "red_flags",
-                "data": red_flag_results
-            })
-    
+            facts_en.append({"type": "red_flags", "data": red_flag_results})
+
     # Step 3b: Mental health crisis guidance
-    if mental_health["crisis"]:
-        facts.append({
-            "type": "mental_health_crisis",
-            "data": {
-                "matched": mental_health["matched"],
-                "actions": mental_health["first_aid"],
+    if mental_health_en["crisis"]:
+        facts_en.append(
+            {
+                "type": "mental_health_crisis",
+                "data": {
+                    "matched": mental_health_en["matched"],
+                    "actions": mental_health_en["first_aid"],
+                },
             }
-        })
-    
+        )
+
     # Step 3c: Pregnancy specific alert messaging
-    if pregnancy_alert["concern"]:
-        facts.append({
-            "type": "pregnancy_alert",
-            "data": {
-                "matched": pregnancy_alert["matched"],
-                "guidance": [
-                    "Severe pregnancy symptoms need urgent medical review.",
-                    "Contact your obstetrician or emergency services immediately.",
-                ],
+    if pregnancy_alert_en["concern"]:
+        facts_en.append(
+            {
+                "type": "pregnancy_alert",
+                "data": {
+                    "matched": pregnancy_alert_en["matched"],
+                    "guidance": PREGNANCY_ALERT_GUIDANCE_EN,
+                },
             }
-        })
-    
+        )
+
     # Step 4: Execute appropriate query path
     if use_graph:
-        # Graph-based query
         route = "graph"
-        
-        # Check for contraindications if user has conditions
-        user_conditions = []
+
+        user_conditions: List[str] = []
         if profile.diabetes:
             user_conditions.append("Diabetes")
         if profile.hypertension:
@@ -288,11 +505,11 @@ async def chat(request: ChatRequest):
             "pregnancy": "Pregnancy",
             "pregnant": "Pregnancy",
         }
-        text_lower = text.lower()
+        processed_lower = processed_text.lower()
         for keyword, label in condition_keywords.items():
-            if keyword in text_lower and label not in user_conditions:
+            if keyword in processed_lower and label not in user_conditions:
                 user_conditions.append(label)
-        
+
         if user_conditions:
             contras = graph_get_contraindications(user_conditions)
             if contras:
@@ -304,57 +521,59 @@ async def chat(request: ChatRequest):
                             condition_avoid_map.setdefault(cond, []).append(avoid_item)
 
                 if condition_avoid_map:
-                    facts.append({
-                        "type": "contraindications",
-                        "data": [
-                            {
-                                "condition": cond,
-                                "avoid": sorted(set(items))
-                            }
-                            for cond, items in condition_avoid_map.items()
-                        ]
-                    })
+                    facts_en.append(
+                        {
+                            "type": "contraindications",
+                            "data": [
+                                {
+                                    "condition": cond,
+                                    "avoid": sorted(set(items)),
+                                }
+                                for cond, items in condition_avoid_map.items()
+                            ],
+                        }
+                    )
 
             safe_actions_map: Dict[str, List[str]] = {}
             for condition in user_conditions:
                 safe_entries = graph_get_safe_actions([condition])
                 actions = sorted(
-                    {entry.get("safeAction") for entry in safe_entries if entry.get("safeAction")}
+                    {
+                        entry.get("safeAction")
+                        for entry in safe_entries
+                        if entry.get("safeAction")
+                    }
                 )
                 if actions:
                     safe_actions_map[condition] = actions
 
             if safe_actions_map:
-                facts.append({
-                    "type": "safe_actions",
-                    "data": [
-                        {"condition": cond, "actions": actions}
-                        for cond, actions in safe_actions_map.items()
-                    ]
-                })
-        
-        # Check for provider query
-        city = profile.city or extract_city(text)
+                facts_en.append(
+                    {
+                        "type": "safe_actions",
+                        "data": [
+                            {"condition": cond, "actions": actions}
+                            for cond, actions in safe_actions_map.items()
+                        ],
+                    }
+                )
+
+        city = profile.city or extract_city(processed_text)
         if city:
             providers = graph_get_providers(city)
             if providers:
-                facts.append({
-                    "type": "providers",
-                    "data": providers
-                })
-        
-        # Also get RAG context for LLM answer
-        rag_results = retrieve(text, k=3)
+                facts_en.append({"type": "providers", "data": providers})
+
+        rag_results = retrieve(processed_text, k=3)
         context = "\n\n".join([r["chunk"] for r in rag_results])
         citations = [
             {"source": r["source"], "id": r["id"], "topic": r.get("topic")}
             for r in rag_results
         ]
-        
-        # Generate answer that references the facts
-        if facts:
+
+        if facts_en:
             fact_summary = "\n\nRelevant facts from database:\n"
-            for fact_group in facts:
+            for fact_group in facts_en:
                 if fact_group["type"] == "red_flags":
                     fact_summary += "⚠️ Red flag conditions detected\n"
                 elif fact_group["type"] == "contraindications":
@@ -363,37 +582,43 @@ async def chat(request: ChatRequest):
                         avoid_items = ", ".join(entry["avoid"])
                         avoid_phrases.append(f"{entry['condition']}: {avoid_items}")
                     if avoid_phrases:
-                        fact_summary += f"⛔ Things to avoid — { '; '.join(avoid_phrases) }\n"
+                        fact_summary += f"⛔ Things to avoid — {'; '.join(avoid_phrases)}\n"
                 elif fact_group["type"] == "providers":
                     fact_summary += f"🏥 {len(fact_group['data'])} healthcare providers found\n"
-            
-            context = context + fact_summary
+            context += fact_summary
 
         if personalization_notes:
-            context += "\n\nPersonalization notes:\n" + "\n".join(f"- {note}" for note in personalization_notes)
-            if not any(f.get("type") == "personalization" for f in facts):
-                facts.append({"type": "personalization", "data": personalization_notes})
-        
-        answer = generate_answer(context, text, lang)
-        
+            context += "\n\nPersonalization notes:\n" + "\n".join(
+                f"- {note}" for note in personalization_notes
+            )
+            if not any(f.get("type") == "personalization" for f in facts_en):
+                facts_en.append({"type": "personalization", "data": personalization_notes})
+
+        answer = generate_answer(
+            context=context,
+            query_en=processed_text,
+            target_lang=target_lang,
+            language_label=language_label,
+            original_query=text,
+            facts=facts_en,
+            citations=citations,
+        )
+
     else:
-        # Vector RAG query
-        route = "vector"
-        
-        # Retrieve relevant chunks
-        rag_results = retrieve(text, k=4)
-        
+        rag_results = retrieve(processed_text, k=4)
         if not rag_results:
-            answer = "I don't have specific information about that. For health concerns, please consult a healthcare professional."
+            answer = localize_text(
+                "I don't have specific information about that. For health concerns, please consult a healthcare professional.",
+                target_lang=target_lang,
+            )
         else:
             context = "\n\n".join([r["chunk"] for r in rag_results])
             citations = [
                 {"source": r["source"], "id": r["id"], "topic": r.get("topic")}
                 for r in rag_results
             ]
-            
-            # Check profile for personalization
-            personalized_conditions = []
+
+            personalized_conditions: List[str] = []
             if profile.diabetes:
                 personalized_conditions.append("diabetes")
             if profile.hypertension:
@@ -408,28 +633,37 @@ async def chat(request: ChatRequest):
                 )
 
             if personalization_notes:
-                context += "\n\nPersonalization notes:\n" + "\n".join(f"- {note}" for note in personalization_notes)
-                facts.append({"type": "personalization", "data": personalization_notes})
-            
-            answer = generate_answer(context, text, lang)
-    
+                context += "\n\nPersonalization notes:\n" + "\n".join(
+                    f"- {note}" for note in personalization_notes
+                )
+                facts_en.append({"type": "personalization", "data": personalization_notes})
+
+            answer = generate_answer(
+                context=context,
+                query_en=processed_text,
+                target_lang=target_lang,
+                language_label=language_label,
+                original_query=text,
+                facts=facts_en,
+                citations=citations,
+            )
+
     # Add disclaimer if not emergency
     if not safety_result["red_flag"]:
-        disclaimer = "\n\n⚠️ This is general information only, not medical advice. Consult a healthcare professional for proper diagnosis and treatment."
-        if lang == "hi":
-            disclaimer = "\n\n⚠️ यह केवल सामान्य जानकारी है, चिकित्सा सलाह नहीं। उचित निदान और उपचार के लिए स्वास्थ्य पेशेवर से परामर्श करें।"
-        answer += disclaimer
-    
+        answer += "\n\n" + get_localized_disclaimer(target_lang)
+
+    facts_response = localize_fact_guidance(facts_en, target_lang)
+
     safety_payload = {
         **safety_result,
-        "mental_health": mental_health,
-        "pregnancy": pregnancy_alert,
+        "mental_health": mental_health_display,
+        "pregnancy": pregnancy_alert_display,
     }
-    
+
     return ChatResponse(
         answer=answer,
         route=route,
-        facts=facts,
+        facts=facts_response,
         citations=citations,
         safety=safety_payload,
     )
