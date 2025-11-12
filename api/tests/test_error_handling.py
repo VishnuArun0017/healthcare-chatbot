@@ -60,6 +60,7 @@ def client(monkeypatch):
     monkeypatch.setattr(main_module, "translate_text", fake_translate)
     monkeypatch.setattr(main_module, "retrieve", lambda query, k=4: [])
     monkeypatch.setattr(main_module, "get_openai_client", lambda: DummyOpenAI())
+    monkeypatch.setattr(main_module, "get_openrouter_client", lambda: None)
 
     return TestClient(app)
 
@@ -130,7 +131,9 @@ def test_chat_fallback_when_openai_unavailable(client, monkeypatch):
 
     response = client.post("/chat", json=payload)
     assert response.status_code == 200
-    assert "I cannot provide medical diagnosis" in response.json()["answer"]
+    answer = response.json()["answer"]
+    assert "Key insight" in answer
+    assert "seek medical care" in answer.lower()
 
 
 def test_chat_handles_internal_error(client, monkeypatch):
@@ -181,7 +184,7 @@ def test_stt_without_openai_returns_503(client, monkeypatch):
     files = {"file": ("audio.webm", audio_bytes, "audio/webm")}
     response = client.post("/stt", files=files)
     assert response.status_code == 503
-    assert response.json()["detail"] == "Speech service unavailable"
+    assert response.json()["detail"].startswith("Speech service unavailable")
 
 
 def test_chat_openai_unavailable_returns_fallback(client, monkeypatch):
@@ -211,7 +214,7 @@ def test_chat_openai_unavailable_returns_fallback(client, monkeypatch):
     )
     assert response.status_code == 200
     answer = response.json()["answer"]
-    assert "I'm here to help with health questions" in answer
+    assert "Key insight" in answer
     assert "general information only" in answer
 
 

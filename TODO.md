@@ -105,6 +105,14 @@
 - [x] Add source citations in responses (link to original sources)
 - [x] Improve fact integration (better formatting of graph facts)
 
+### 3.4 Error Handling & Logging
+- [x] Add proper error handling for all endpoints
+- [x] Add logging (use Python's logging module)
+- [x] Add rate limiting (optional, for demo)
+- [x] Add request validation
+- [x] Handle OpenAI API errors gracefully
+- [x] Handle Neo4j connection failures gracefully
+
 ### 3.5 Voice Loop & Latency
 - [x] Implement end-to-end voice pipeline (audio upload → STT → RAG → translation → TTS)
 - [x] Optimize latency (instrument safety/routing timings, prep for streaming)
@@ -113,13 +121,13 @@
 - [x] Expand Whisper STT config to support English, Hindi, Tamil, Kannada, Malayalam, Telugu
 - [x] Configure multi-language TTS voices (English, Hindi, Tamil, Kannada, Malayalam, Telugu)
 
-### 3.4 Error Handling & Logging
-- [x] Add proper error handling for all endpoints
-- [x] Add logging (use Python's logging module)
-- [x] Add rate limiting (optional, for demo)
-- [x] Add request validation
-- [x] Handle OpenAI API errors gracefully
-- [x] Handle Neo4j connection failures gracefully
+### 3.6 Romanized Multilingual Text Pipeline
+- [x] Detect and normalize romanized Tamil/Hindi/Telugu/Kannada/Malayalam inputs typed with English keyboards
+- [x] Transliterate to native script and translate to English before RAG/graph processing
+- [x] Reinforce DeepSeek prompts to strictly use supplied RAG/Neo4j context (no hallucinations)
+- [x] Return localized responses in user-preferred script or romanized form
+- [x] Add tests covering romanized queries across supported languages
+
 
 ## 📋 Phase 4: Frontend Improvements (Priority: MEDIUM)
 

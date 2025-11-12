@@ -4,10 +4,12 @@ import copy
 import json
 import logging
 import os
+import re
 import tempfile
 import time
 from collections import defaultdict, deque
 from io import BytesIO
+from pathlib import Path
 from typing import Any, Deque, Dict, List, Optional, Tuple
 
 from deep_translator import GoogleTranslator  # type: ignore
@@ -29,9 +31,35 @@ except Exception:  # pragma: no cover
     VoiceSettings = None
 
 try:
-    from gtts import gTTS
+    from gtts import gTTS  # type: ignore
 except Exception:  # pragma: no cover
     gTTS = None
+
+try:
+    from indic_transliteration import sanscript  # type: ignore
+    from indic_transliteration.sanscript import transliterate  # type: ignore
+except Exception:  # pragma: no cover
+    sanscript = None
+    transliterate = None
+
+def _load_environment() -> None:
+    """
+    Load .env values from either the api/ directory or the project root.
+    This helps when the server starts from the repository root via start_server.py.
+    """
+    here = Path(__file__).resolve().parent
+    candidates = [here / ".env", here.parent / ".env"]
+    loaded = False
+    for path in candidates:
+        if path.exists():
+            load_dotenv(path, override=True)
+            loaded = True
+    if not loaded:
+        # Fallback to default behaviour (search current working directory / parents)
+        load_dotenv()
+
+
+_load_environment()
 
 os.environ.setdefault("CHROMADB_DISABLE_TELEMETRY", "1")
 
@@ -53,8 +81,8 @@ from .graph.cypher import (
     get_safe_actions_for_metabolic_conditions as neo4j_get_safe_actions,
 )
 from .graph.client import neo4j_client
-
-load_dotenv()
+from .services.indic_translator import IndicTransService
+indic_translator = IndicTransService()
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(
@@ -199,7 +227,131 @@ GTTS_LANG_MAP = {
     "ml": "ml",
 }
 
+ROMANIZED_CLUES: Dict[str, List[str]] = {
+    "ta": [
+        "ennachu",
+        "ennada",
+        "thala",
+        "thalai",
+        "valikuthu",
+        "valikkuthu",
+        "valichuthu",
+        "sollu",
+        "sapadu",
+        "soru",
+        "sollunga",
+        "enna",
+        "irukku",
+        "illai",
+        "naan",
+        "neenga",
+        "paati",
+        "amma",
+        "appa",
+        "bro",
+        "dei",
+    ],
+    "hi": [
+        "kya",
+        "nahi",
+        "hai",
+        "dard",
+        "bukhar",
+        "sir",
+        "pet",
+        "dawai",
+        "davayi",
+        "madad",
+        "kripa",
+        "bhai",
+        "behen",
+        "ghar",
+        "ilaj",
+    ],
+    "te": [
+        "em",
+        "emi",
+        "aina",
+        "ayyayo",
+        "nenu",
+        "meeru",
+        "chelli",
+        "cheyyali",
+        "noppi",
+        "baadha",
+        "ledhu",
+        "ledu",
+        "amma",
+        "anna",
+        "fever",
+        "vundi",
+        "pain",
+    ],
+    "kn": [
+        "yen",
+        "yenu",
+        "maga",
+        "thumba",
+        "haudu",
+        "illa",
+        "mane",
+        "bega",
+        "nodi",
+        "saar",
+        "akka",
+        "gottilla",
+        "mane",
+    ],
+    "ml": [
+        "entha",
+        "enthaa",
+        "vayaru",
+        "vedana",
+        "pani",
+        "cheyyanam",
+        "illa",
+        "njan",
+        "ammachi",
+        "appo",
+        "chedi",
+        "vedana",
+        "marunnu",
+    ],
+}
+
+ROMANIZED_THRESHOLD = 2
+
+LANGUAGE_SCRIPT_MAP: Dict[str, Optional[str]] = {
+    "hi": "devanagari",
+    "ta": "tamil",
+    "te": "telugu",
+    "kn": "kannada",
+    "ml": "malayalam",
+}
+
 _eleven_client: Optional["ElevenLabs"] = None
+
+OPENROUTER_API_KEY = (
+    os.getenv("OPENROUTER_API_KEY")
+    or os.getenv("DEEPSEEK_API_KEY")
+    or os.getenv("OPENAI_API_KEY")
+)
+OPENROUTER_BASE_URL = (
+    os.getenv("DEEPSEEK_BASE_URL")
+    or os.getenv("OPENROUTER_BASE_URL")
+    or "https://openrouter.ai/api/v1"
+)
+OPENROUTER_MODEL = (
+    os.getenv("DEEPSEEK_MODEL")
+    or os.getenv("OPENROUTER_MODEL")
+    or "openrouter/auto"
+)
+OPENROUTER_SITE_URL = os.getenv("OPENROUTER_SITE_URL", "http://localhost")
+OPENROUTER_APP_NAME = os.getenv("OPENROUTER_SITE_NAME", os.getenv("OPENROUTER_APP_NAME", "Healthcare Chatbot"))
+OPENROUTER_EXTRA_HEADERS = {
+    "HTTP-Referer": OPENROUTER_SITE_URL,
+    "X-Title": OPENROUTER_APP_NAME,
+}
 
 def detect_language(text: str) -> str:
     try:
@@ -229,24 +381,272 @@ def translate_text(text: str, target_lang: str, src_lang: Optional[str] = None) 
         return text
 
 
-def localize_text(text: str, target_lang: str, src_lang: str = "en") -> str:
-    if target_lang == src_lang:
+def is_mostly_ascii(text: str) -> bool:
+    return all(ord(ch) < 128 for ch in text)
+
+
+def detect_romanized_language(text: str) -> Optional[str]:
+    if not text or not is_mostly_ascii(text):
+        return None
+
+    lowered = text.lower()
+    best_lang: Optional[str] = None
+    best_score = 0
+
+    for lang, clues in ROMANIZED_CLUES.items():
+        score = sum(1 for clue in clues if clue in lowered)
+        if score > best_score:
+            best_score = score
+            best_lang = lang
+
+    if best_lang and best_score >= ROMANIZED_THRESHOLD:
+        return best_lang
+    return None
+
+
+def attempt_native_script_conversion(text: str, lang: str) -> Optional[str]:
+    try:
+        converted = GoogleTranslator(source=lang, target=lang).translate(text)
+        if converted and converted.strip().lower() != text.strip().lower():
+            return converted
+    except Exception as exc:
+        logger.debug(
+            "Native script conversion failed",
+            extra={"lang": lang, "error": str(exc)},
+        )
+    return None
+
+
+def translate_romanized_to_english(
+    text: str, lang: str
+) -> Tuple[str, Optional[str], Dict[str, Any]]:
+    """
+    Translate romanized Indic text to English. Tries IndicTrans2 first (if available),
+    then falls back to Google Translate heuristics.
+    """
+    meta: Dict[str, Any] = {"attempts": []}
+
+    if indic_translator.is_enabled():
+        result = indic_translator.translate_romanized_to_english(text, lang)
+        meta["attempts"].append(
+            {
+                "provider": "indictrans2",
+                "success": result.success,
+                **result.details,
+            }
+        )
+        if result.success and result.translated_text:
+            meta["provider"] = "indictrans2"
+            return result.translated_text or text, result.native_script, meta
+
+    initial = translate_text(text, target_lang="en", src_lang=lang)
+    if initial.strip().lower() != text.strip().lower():
+        meta["provider"] = "google_translate"
+        meta["attempts"].append(
+            {
+                "provider": "google_translate",
+                "success": True,
+                "native_script_conversion": False,
+            }
+        )
+        return initial, None, meta
+
+    native_script = attempt_native_script_conversion(text, lang)
+    if native_script:
+        translated = translate_text(native_script, target_lang="en", src_lang=lang)
+        meta["provider"] = "google_translate"
+        meta["attempts"].append(
+            {
+                "provider": "google_translate",
+                "success": True,
+                "native_script_conversion": True,
+            }
+        )
+        return translated, native_script, meta
+
+    meta["provider"] = "google_translate"
+    meta["attempts"].append(
+        {
+            "provider": "google_translate",
+            "success": True,
+            "native_script_conversion": False,
+            "note": "direct passthrough (no better translation available)",
+        }
+    )
+    return initial, None, meta
+
+
+def romanize_text(text: str, lang: str) -> str:
+    if (
+        not text
+        or lang == "en"
+        or transliterate is None
+        or sanscript is None
+        or is_mostly_ascii(text)
+    ):
         return text
-    return translate_text(text, target_lang=target_lang, src_lang=src_lang)
+
+    script_key = LANGUAGE_SCRIPT_MAP.get(lang)
+    if not script_key:
+        return text
+
+    try:
+        romanized = transliterate(text, script_key, sanscript.ITRANS)
+        # Clean up spacing for readability
+        romanized = romanized.replace("##", "").replace("~", "").strip()
+        return romanized
+    except Exception as exc:  # pragma: no cover
+        logger.debug(
+            "Romanization failed",
+            extra={"lang": lang, "error": str(exc)},
+        )
+        return text
 
 
-def get_language_label(code: str) -> str:
-    return LANGUAGE_LABELS.get(code, LANGUAGE_LABELS[DEFAULT_LANG])
+def _summarize_chunk(chunk: str, sentence_limit: int = 2) -> str:
+    if not chunk:
+        return ""
+    sentences = re.split(r"(?<=[.?!])\s+", chunk.strip())
+    summary = " ".join(sentences[:sentence_limit]).strip()
+    return summary
 
 
-def get_localized_disclaimer(lang: str) -> str:
-    return localize_text(DISCLAIMER_EN, target_lang=lang)
+def build_fallback_answer(
+    *,
+    query_en: str,
+    rag_results: List[Dict[str, Any]],
+    facts: List[Dict[str, Any]],
+    citations: List[Dict[str, Any]],
+    target_lang: str,
+    response_style: str,
+) -> str:
+    lines: List[str] = []
+
+    if rag_results:
+        top_chunks = rag_results[:2]
+        for idx, result in enumerate(top_chunks, start=1):
+            chunk = result.get("chunk", "")
+            summary = _summarize_chunk(chunk)
+            if summary:
+                lines.append(f"Key insight {idx}: {summary}")
+
+    for fact in facts:
+        f_type = fact.get("type")
+        data = fact.get("data", [])
+        if f_type == "safe_actions":
+            for entry in data:
+                condition = entry.get("condition")
+                actions = ", ".join(entry.get("actions", []))
+                lines.append(f"For {condition}, safe steps include: {actions}.")
+        elif f_type == "contraindications":
+            for entry in data:
+                condition = entry.get("condition")
+                avoids = ", ".join(entry.get("avoid", []))
+                lines.append(f"Avoid {avoids} if you have {condition}.")
+        elif f_type == "providers":
+            providers = "; ".join(
+                f"{item.get('provider')} ({item.get('mode', 'care')})"
+                for item in data
+            )
+            if providers:
+                lines.append(f"Nearby care options: {providers}.")
+
+    if not lines:
+        lines.append(
+            "I don't have enough information from my knowledge base to give specific advice."
+        )
+
+    lines.append(
+        "If symptoms worsen or you feel unwell, seek medical care or call 108 immediately."
+    )
+
+    if citations:
+        cited_sources = ", ".join(
+            cite.get("topic") or cite.get("source", "unknown") for cite in citations[:3]
+        )
+        lines.append(f"Sources consulted: {cited_sources}.")
+
+    english_text = " ".join(lines)
+    localized = localize_text(
+        english_text,
+        target_lang=target_lang,
+        src_lang="en",
+        response_style=response_style,
+    )
+    return localized
 
 
-def localize_list(entries: List[str], lang: str, src_lang: str = "en") -> List[str]:
+def localize_text(
+    text: str,
+    target_lang: str,
+    src_lang: str = "en",
+    response_style: str = "native",
+    capture_meta: Optional[Dict[str, Any]] = None,
+) -> str:
+    meta: Dict[str, Any] = {}
+
+    if target_lang == src_lang:
+        meta.update({"provider": "identity", "success": True})
+        if capture_meta is not None:
+            capture_meta.update(meta)
+        return text
+
+    translated = None
+
+    if src_lang == "en" and indic_translator.is_enabled():
+        result = indic_translator.translate_english_to_local(text, target_lang)
+        meta = {
+            "provider": result.provider,
+            "success": result.success,
+            **result.details,
+        }
+        if result.success and result.translated_text:
+            translated = result.translated_text
+
+    if translated is None:
+        translated = translate_text(text, target_lang=target_lang, src_lang=src_lang)
+        meta.setdefault("provider", "google_translate")
+        meta.setdefault("success", True)
+        meta.setdefault("reason", "fallback_to_google")
+
+    if response_style == "romanized" and target_lang != "en":
+        translated = romanize_text(translated, target_lang)
+
+    if capture_meta is not None:
+        capture_meta.update(meta)
+
+    return translated
+
+
+def get_language_label(code: str, response_style: str = "native") -> str:
+    label = LANGUAGE_LABELS.get(code, LANGUAGE_LABELS[DEFAULT_LANG])
+    if response_style == "romanized" and code != "en":
+        return f"{label} (Romanized Latin script)"
+    return label
+
+
+def get_localized_disclaimer(lang: str, response_style: str = "native") -> str:
+    return localize_text(DISCLAIMER_EN, target_lang=lang, response_style=response_style)
+
+
+def localize_list(
+    entries: List[str],
+    lang: str,
+    src_lang: str = "en",
+    response_style: str = "native",
+) -> List[str]:
     if lang == src_lang:
-        return entries
-    return [translate_text(item, target_lang=lang, src_lang=src_lang) for item in entries]
+        localized = entries
+    else:
+        localized = [
+            localize_text(item, target_lang=lang, src_lang=src_lang, response_style=response_style)
+            for item in entries
+        ]
+
+    if response_style == "romanized" and lang != "en":
+        return [romanize_text(item, lang) for item in localized]
+
+    return localized
 
 
 def get_elevenlabs_client() -> Optional["ElevenLabs"]:
@@ -261,12 +661,15 @@ def get_elevenlabs_client() -> Optional["ElevenLabs"]:
 
 
 def transcribe_audio_bytes(audio_bytes: bytes, *, language_hint: Optional[str] = None) -> str:
-    client = get_openai_client()
-    if not client:
-        raise HTTPException(status_code=503, detail="Speech service unavailable")
-
     if not audio_bytes:
         raise HTTPException(status_code=400, detail="Empty audio data received.")
+
+    client = get_openai_client()
+    if not client:
+        raise HTTPException(
+            status_code=503,
+            detail="Speech service unavailable. Configure OPENAI_API_KEY for Whisper transcription.",
+        )
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as tmp:
         tmp.write(audio_bytes)
@@ -343,19 +746,57 @@ def encode_audio_base64(audio_bytes: bytes) -> str:
 
 
 openai_api_key = os.getenv("OPENAI_API_KEY")
+openrouter_api_key = OPENROUTER_API_KEY
 _openai_client: Optional[OpenAI] = None
+_openrouter_client: Optional[OpenAI] = None
+_chat_model_openai: str = os.getenv("OPENAI_CHAT_MODEL", "gpt-3.5-turbo")
+_chat_model_openrouter: str = OPENROUTER_MODEL
 _neo4j_available: Optional[bool] = None
 
 
 def get_openai_client() -> Optional[OpenAI]:
-    global _openai_client
-    if _openai_client is None and openai_api_key:
+    global _openai_client, _chat_model_openai
+    if _openai_client is not None:
+        return _openai_client
+
+    if openai_api_key:
         try:
             _openai_client = OpenAI(api_key=openai_api_key)
+            _chat_model_openai = os.getenv("OPENAI_CHAT_MODEL", _chat_model_openai)
+            logger.info(
+                "OpenAI client initialised",
+                extra={"model": _chat_model_openai},
+            )
         except Exception as exc:
             logger.error("OpenAI client initialization error", extra={"error": str(exc)})
             _openai_client = None
     return _openai_client
+
+
+def get_openrouter_client() -> Optional[OpenAI]:
+    global _openrouter_client, _chat_model_openrouter
+    if _openrouter_client is not None:
+        return _openrouter_client
+
+    if openrouter_api_key:
+        try:
+            _openrouter_client = OpenAI(
+                api_key=openrouter_api_key,
+                base_url=OPENROUTER_BASE_URL,
+                default_headers={
+                    "HTTP-Referer": OPENROUTER_SITE_URL,
+                    "X-Title": OPENROUTER_APP_NAME,
+                },
+            )
+            _chat_model_openrouter = OPENROUTER_MODEL
+            logger.info(
+                "OpenRouter client initialised",
+                extra={"model": _chat_model_openrouter, "base_url": OPENROUTER_BASE_URL},
+            )
+        except Exception as exc:
+            logger.error("OpenRouter client initialization error", extra={"error": str(exc)})
+            _openrouter_client = None
+    return _openrouter_client
 
 
 def ensure_neo4j() -> bool:
@@ -494,7 +935,11 @@ def build_fact_blocks(facts: List[Dict[str, Any]]) -> Tuple[str, str]:
     return llm_summary, display_summary
 
 
-def localize_fact_guidance(facts: List[Dict[str, Any]], lang: str) -> List[Dict[str, Any]]:
+def localize_fact_guidance(
+    facts: List[Dict[str, Any]],
+    lang: str,
+    response_style: str = "native",
+) -> List[Dict[str, Any]]:
     if lang == "en":
         return facts
 
@@ -502,10 +947,10 @@ def localize_fact_guidance(facts: List[Dict[str, Any]], lang: str) -> List[Dict[
     for fact in localized:
         if fact.get("type") == "mental_health_crisis":
             actions = fact.get("data", {}).get("actions", [])
-            fact["data"]["actions"] = localize_list(actions, lang)
+            fact["data"]["actions"] = localize_list(actions, lang, response_style=response_style)
         elif fact.get("type") == "pregnancy_alert":
             guidance = fact.get("data", {}).get("guidance", [])
-            fact["data"]["guidance"] = localize_list(guidance, lang)
+            fact["data"]["guidance"] = localize_list(guidance, lang, response_style=response_style)
     return localized
 
 
@@ -513,18 +958,12 @@ def generate_answer(
     *,
     context: str,
     query_en: str,
-    target_lang: str,
-    language_label: str,
+    llm_language_label: str,
     original_query: str,
     facts: List[Dict[str, Any]],
     citations: List[Dict[str, Any]],
-) -> str:
+) -> Tuple[str, Dict[str, Any]]:
     """Generate answer using OpenAI or fallback"""
-    client = get_openai_client()
-    if not client:
-        logger.warning("OpenAI client unavailable, returning fallback response")
-        return localize_text(FALLBACK_MESSAGE_EN, target_lang=target_lang)
-
     fact_summary, _ = build_fact_blocks(facts)
 
     citations_section = ""
@@ -553,42 +992,82 @@ IMPORTANT GUIDELINES:
   4. Mandatory disclaimer
 - Integrate database facts when helpful (contraindications, safe actions, providers, alerts)
 - If facts indicate emergencies or crises, emphasise them clearly
-- Respond in the target language exactly as requested: use simple, clear Hindi for Hindi; otherwise English
+- Respond only in the requested language (no code-switching)
+- Use only the supplied context. If the context does not contain sufficient information, state: "I don't have enough information from my sources."
 - End with a 'Sources:' section referencing the provided citations by number."""
 
-    user_prompt = f"""Context from medical knowledge base (in English):
-{context}
+    sources_blocks: List[str] = []
+    if context.strip():
+        sources_blocks.append(context.strip())
+    if fact_summary:
+        sources_blocks.append(f"Structured facts:\n{fact_summary}")
+    if citations_section:
+        sources_blocks.append(f"Citations metadata:\n{citations_section}")
+    sources_payload = "\n\n".join(sources_blocks) if sources_blocks else "None provided."
 
-Structured facts to emphasise:
-{fact_summary or 'None provided.'}
+    user_prompt = (
+        f"sources :\n{sources_payload}\n\n"
+        "I want you to strictly answer based on the sources provided. "
+        "Do not rely on outside knowledge. If the sources do not contain sufficient information, "
+        'reply with: "I don\'t have enough information from my sources."\n\n'
+        f"user prompt (english) : {query_en}\n"
+        f"user prompt (original) : {original_query}\n\n"
+        f"Language for response: {llm_language_label}\n"
+        f"Respond exclusively in {llm_language_label} following the required structure and cite the supplied sources by number."
+    )
 
-User question (original): {original_query}
-User question (English): {query_en}
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ]
 
-Language for response: {language_label}
+    providers_to_try: List[Tuple[str, Optional[OpenAI], str]] = [
+        ("openai", get_openai_client(), _chat_model_openai),
+        ("openrouter", get_openrouter_client(), _chat_model_openrouter),
+    ]
 
-Citations to reference:
-{citations_section or 'No citations supplied.'}
+    last_error: Optional[str] = None
 
-Produce a helpful, non-diagnostic response following the required structure and include a Sources section."""
+    for provider, client, model in providers_to_try:
+        if not client:
+            continue
+        try:
+            kwargs: Dict[str, Any] = {
+                "model": model,
+                "messages": messages,
+                "temperature": 0.7,
+                "max_tokens": 500,
+            }
+            if provider == "openrouter":
+                kwargs["extra_headers"] = OPENROUTER_EXTRA_HEADERS
+                kwargs["extra_body"] = {}
 
-    try:
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            temperature=0.7,
-            max_tokens=500
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        logger.error("OpenAI completion error", extra={"error": str(e)})
-        error_message = (
-            "I'm experiencing technical difficulties. For health emergencies, please call 108 or visit your nearest hospital."
-        )
-        return localize_text(error_message, target_lang=target_lang)
+            response = client.chat.completions.create(**kwargs)
+            if provider == "openrouter":
+                logger.info("Response generated via OpenRouter", extra={"model": model})
+            return response.choices[0].message.content, {
+                "provider": provider,
+                "model": model,
+            }
+        except Exception as exc:
+            status_code = getattr(exc, "status_code", None)
+            logger.warning(
+                "Chat completion attempt failed",
+                extra={"provider": provider, "model": model, "status_code": status_code, "error": str(exc)},
+            )
+            last_error = str(exc)
+
+    if last_error:
+        logger.error("All chat providers failed", extra={"error": last_error})
+    else:
+        logger.error("No chat providers available for completion")
+
+    return FALLBACK_MESSAGE_EN, {
+        "provider": None,
+        "model": None,
+        "fallback": True,
+        "reason": last_error or "no_available_client",
+    }
 
 
 @app.get("/health")
@@ -596,6 +1075,7 @@ async def health_check():
     return {
         "ok": True,
         "openai_configured": get_openai_client() is not None,
+        "openrouter_configured": get_openrouter_client() is not None,
         "services": {
             "rag": True,
             "graph": ensure_neo4j(),
@@ -610,7 +1090,7 @@ async def speech_to_text(file: UploadFile = File(...), lang: Optional[str] = Non
     """Convert speech to text using OpenAI Whisper"""
     if file.content_type and not file.content_type.startswith("audio"):
         raise HTTPException(status_code=400, detail="Unsupported media type. Please upload an audio file.")
-
+    
     try:
         audio_bytes = await file.read()
         transcript = transcribe_audio_bytes(audio_bytes, language_hint=lang)
@@ -627,19 +1107,52 @@ def process_chat_request(request: ChatRequest) -> Tuple[ChatResponse, str, Dict[
     total_start = time.perf_counter()
 
     text = request.text
-    requested_lang = request.lang if request.lang in SUPPORTED_LANG_CODES else None
+    requested_lang_raw = request.lang if request.lang in SUPPORTED_LANG_CODES else None
+    romanized_lang = detect_romanized_language(text)
     detected_lang = detect_language(text) if text else DEFAULT_LANG
     detected_supported = detected_lang if detected_lang in SUPPORTED_LANG_CODES else None
+
+    requested_lang = requested_lang_raw
+    response_style = "native"
+    native_script_variant: Optional[str] = None
+    debug_info: Dict[str, Any] = {
+        "input_text": text,
+        "requested_language": requested_lang_raw,
+        "detected_language": detected_lang,
+        "romanized_detected_language": romanized_lang,
+    }
+
+    if romanized_lang:
+        if not requested_lang or requested_lang in {DEFAULT_LANG, romanized_lang}:
+            requested_lang = romanized_lang
+            response_style = "romanized"
+        if not detected_supported or detected_supported in {DEFAULT_LANG, "en"}:
+            detected_supported = romanized_lang
+
     target_lang = requested_lang or detected_supported or DEFAULT_LANG
-    language_label = get_language_label(target_lang)
+    language_label = get_language_label(target_lang, response_style=response_style)
+    debug_info["target_language"] = target_lang
+    debug_info["response_style"] = response_style
 
     profile: Profile = request.profile
     personalization_notes = build_personalization_notes(profile)
 
     processed_text = text
     source_lang_for_processing = detected_supported or DEFAULT_LANG
-    if source_lang_for_processing != "en":
+    romanization_meta: Dict[str, Any] = {}
+    if romanized_lang and response_style == "romanized":
+        processed_text, native_script_variant, romanization_meta = translate_romanized_to_english(
+            text, romanized_lang
+        )
+        source_lang_for_processing = romanized_lang
+    elif source_lang_for_processing != "en":
         processed_text = translate_text(text, target_lang="en", src_lang=source_lang_for_processing)
+    debug_info["processed_text_en"] = processed_text
+    debug_info["processed_text_source_language"] = source_lang_for_processing
+    if native_script_variant:
+        debug_info["native_script_variant"] = native_script_variant
+    if romanization_meta:
+        debug_info["romanized_translation"] = romanization_meta
 
     safety_start = time.perf_counter()
     safety_result = detect_red_flags(processed_text, "en")
@@ -651,13 +1164,21 @@ def process_chat_request(request: ChatRequest) -> Tuple[ChatResponse, str, Dict[
     if target_lang != "en" and mental_health_en["first_aid"]:
         mental_health_display = {
             **mental_health_en,
-            "first_aid": localize_list(mental_health_en["first_aid"], target_lang),
+            "first_aid": localize_list(
+                mental_health_en["first_aid"],
+                target_lang,
+                response_style=response_style,
+            ),
         }
 
     pregnancy_guidance_display = (
         PREGNANCY_ALERT_GUIDANCE_EN
         if target_lang == "en"
-        else localize_list(PREGNANCY_ALERT_GUIDANCE_EN, target_lang)
+        else localize_list(
+            PREGNANCY_ALERT_GUIDANCE_EN,
+            target_lang,
+            response_style=response_style,
+        )
     )
     pregnancy_alert_display = {
         **pregnancy_alert_en,
@@ -670,7 +1191,8 @@ def process_chat_request(request: ChatRequest) -> Tuple[ChatResponse, str, Dict[
     citations: List[Dict[str, Any]] = []
     answer = ""
     route = "vector"
-
+    rag_results: List[Dict[str, Any]] = []
+    
     if safety_result["red_flag"]:
         symptoms = extract_symptoms(processed_text)
         red_flag_results = graph_get_red_flags(symptoms)
@@ -701,7 +1223,7 @@ def process_chat_request(request: ChatRequest) -> Tuple[ChatResponse, str, Dict[
 
     if use_graph:
         route = "graph"
-
+        
         user_conditions: List[str] = []
         if profile.diabetes:
             user_conditions.append("Diabetes")
@@ -720,7 +1242,7 @@ def process_chat_request(request: ChatRequest) -> Tuple[ChatResponse, str, Dict[
         for keyword, label in condition_keywords.items():
             if keyword in processed_lower and label not in user_conditions:
                 user_conditions.append(label)
-
+        
         if user_conditions:
             contras = graph_get_contraindications(user_conditions)
             if contras:
@@ -734,7 +1256,7 @@ def process_chat_request(request: ChatRequest) -> Tuple[ChatResponse, str, Dict[
                 if condition_avoid_map:
                     facts_en.append(
                         {
-                            "type": "contraindications",
+                    "type": "contraindications",
                             "data": [
                                 {
                                     "condition": cond,
@@ -774,7 +1296,7 @@ def process_chat_request(request: ChatRequest) -> Tuple[ChatResponse, str, Dict[
             providers = graph_get_providers(city)
             if providers:
                 facts_en.append({"type": "providers", "data": providers})
-
+        
         rag_start = time.perf_counter()
         rag_results = retrieve(processed_text, k=3)
         timings["retrieval"] = time.perf_counter() - rag_start
@@ -783,7 +1305,9 @@ def process_chat_request(request: ChatRequest) -> Tuple[ChatResponse, str, Dict[
             {"source": r["source"], "id": r["id"], "topic": r.get("topic")}
             for r in rag_results
         ]
-
+        debug_info["rag_context_snippets"] = [r["chunk"][:200] for r in rag_results]
+        debug_info["citations"] = citations
+        
         if facts_en:
             fact_summary = "\n\nRelevant facts from database:\n"
             for fact_group in facts_en:
@@ -808,32 +1332,72 @@ def process_chat_request(request: ChatRequest) -> Tuple[ChatResponse, str, Dict[
                 facts_en.append({"type": "personalization", "data": personalization_notes})
 
         generation_start = time.perf_counter()
-        answer = generate_answer(
+        answer_en, provider_meta = generate_answer(
             context=context,
             query_en=processed_text,
-            target_lang=target_lang,
-            language_label=language_label,
+            llm_language_label="English",
             original_query=text,
             facts=facts_en,
             citations=citations,
         )
+        if provider_meta.get("fallback"):
+            localized_answer = build_fallback_answer(
+                query_en=processed_text,
+                rag_results=rag_results,
+                facts=facts_en,
+                citations=citations,
+                target_lang=target_lang,
+                response_style=response_style,
+            )
+            answer_en = FALLBACK_MESSAGE_EN
+        else:
+            localization_meta: Dict[str, Any] = {}
+            localized_answer = localize_text(
+                answer_en,
+                target_lang=target_lang,
+                response_style=response_style,
+                capture_meta=localization_meta,
+            )
+            if localization_meta:
+                debug_info["localization"] = localization_meta
         timings["answer_generation"] = time.perf_counter() - generation_start
-
+        debug_info["llm"] = provider_meta
+        debug_info["answer_en"] = answer_en
+        debug_info["answer_localized"] = localized_answer
+        answer = localized_answer
+        
     else:
         rag_start = time.perf_counter()
         rag_results = retrieve(processed_text, k=4)
         timings["retrieval"] = time.perf_counter() - rag_start
+        debug_info["rag_context_snippets"] = [r["chunk"][:200] for r in rag_results]
         if not rag_results:
-            answer = localize_text(
-                "I don't have specific information about that. For health concerns, please consult a healthcare professional.",
-                target_lang=target_lang,
+            answer_en = (
+                "I don't have enough information from my sources. "
+                "For health concerns, please consult a healthcare professional."
             )
+            localized_answer = localize_text(
+                answer_en,
+                target_lang=target_lang,
+                response_style=response_style,
+            )
+            provider_meta = {
+                "provider": None,
+                "model": None,
+                "fallback": True,
+                "reason": "insufficient_context",
+            }
+            answer = localized_answer
+            debug_info["llm"] = provider_meta
+            debug_info["answer_en"] = answer_en
+            debug_info["answer_localized"] = localized_answer
         else:
             context = "\n\n".join([r["chunk"] for r in rag_results])
             citations = [
                 {"source": r["source"], "id": r["id"], "topic": r.get("topic")}
                 for r in rag_results
             ]
+            debug_info["citations"] = citations
 
             personalized_conditions: List[str] = []
             if profile.diabetes:
@@ -856,21 +1420,44 @@ def process_chat_request(request: ChatRequest) -> Tuple[ChatResponse, str, Dict[
                 facts_en.append({"type": "personalization", "data": personalization_notes})
 
             generation_start = time.perf_counter()
-            answer = generate_answer(
+            answer_en, provider_meta = generate_answer(
                 context=context,
                 query_en=processed_text,
-                target_lang=target_lang,
-                language_label=language_label,
+                llm_language_label="English",
                 original_query=text,
                 facts=facts_en,
                 citations=citations,
             )
+            if provider_meta.get("fallback"):
+                localized_answer = build_fallback_answer(
+                    query_en=processed_text,
+                    rag_results=rag_results,
+                    facts=facts_en,
+                    citations=citations,
+                    target_lang=target_lang,
+                    response_style=response_style,
+                )
+                answer_en = FALLBACK_MESSAGE_EN
+            else:
+                localization_meta: Dict[str, Any] = {}
+                localized_answer = localize_text(
+                    answer_en,
+                    target_lang=target_lang,
+                    response_style=response_style,
+                    capture_meta=localization_meta,
+                )
+                if localization_meta:
+                    debug_info["localization"] = localization_meta
             timings["answer_generation"] = time.perf_counter() - generation_start
+            debug_info["llm"] = provider_meta
+            debug_info["answer_en"] = answer_en
+            debug_info["answer_localized"] = localized_answer
+            answer = localized_answer
 
     if not safety_result["red_flag"]:
-        answer += "\n\n" + get_localized_disclaimer(target_lang)
+        answer += "\n\n" + get_localized_disclaimer(target_lang, response_style=response_style)
 
-    facts_response = localize_fact_guidance(facts_en, target_lang)
+    facts_response = localize_fact_guidance(facts_en, target_lang, response_style=response_style)
 
     safety_payload = {
         **safety_result,
@@ -878,18 +1465,40 @@ def process_chat_request(request: ChatRequest) -> Tuple[ChatResponse, str, Dict[
         "pregnancy": pregnancy_alert_display,
     }
 
+    debug_info["response_preview"] = answer[:200]
+    debug_info.setdefault("citations", citations)
+    debug_info.setdefault("rag_context_snippets", [])
+
     response = ChatResponse(
         answer=answer,
         route=route,
         facts=facts_response,
         citations=citations,
         safety=safety_payload,
+        metadata={},
     )
     logger.debug(
         "Chat response composed",
-        extra={"route": route, "facts": len(response.facts), "target_lang": target_lang},
+        extra={
+            "route": route,
+            "facts": len(response.facts),
+            "target_lang": target_lang,
+            "response_style": response_style,
+        },
     )
     timings["total"] = time.perf_counter() - total_start
+
+    metadata_payload: Dict[str, Any] = {
+        "timings": timings,
+        "target_language": target_lang,
+        "response_style": response_style,
+    }
+    if request.debug:
+        metadata_payload["debug"] = debug_info
+        debug_info["response_length"] = len(answer)
+        debug_info["rag_context_count"] = len(debug_info.get("rag_context_snippets") or [])
+    response.metadata = metadata_payload
+
     return response, target_lang, timings
 
 

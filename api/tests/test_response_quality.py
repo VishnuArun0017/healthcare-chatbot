@@ -39,6 +39,7 @@ def stub_external_dependencies(monkeypatch):
     monkeypatch.setattr("api.main.retrieve", fake_retrieve)
     monkeypatch.setattr("api.main.is_graph_intent", lambda _: False)
     monkeypatch.setattr("api.main.get_openai_client", lambda: None)
+    monkeypatch.setattr("api.main.get_openrouter_client", lambda: None)
 
 
 @pytest.mark.parametrize("lang_code", ["hi", "ta", "te", "kn", "ml"])
@@ -64,7 +65,8 @@ def test_multilingual_response_localizes_output(lang_code: str):
     assert data["citations"]  # ensure citations preserved
 
     answer = data["answer"]
-    assert f"{FALLBACK_MESSAGE_EN}[{lang_code}]" in answer
+    assert "Key insight 1: Sample clinical guidance chunk." in answer
+    assert f"[{lang_code}]" in answer
     assert f"{DISCLAIMER_EN}[{lang_code}]" in answer
 
     facts = data["facts"]
@@ -83,3 +85,34 @@ def test_multilingual_response_localizes_output(lang_code: str):
         for first_aid_instruction in safety["mental_health"]["first_aid"]
     )
 
+
+def test_romanized_tamil_input_gets_localized_response():
+    payload = {
+        "text": "dai ennachu thala valikuthu da",
+        "lang": "en",
+        "profile": {
+            "age": 30,
+            "sex": "male",
+            "diabetes": False,
+            "hypertension": False,
+            "pregnancy": False,
+        },
+    }
+
+    response = client.post("/chat", json=payload)
+    assert response.status_code == 200
+
+    data = response.json()
+    assert data["route"] == "vector"
+
+    answer = data["answer"]
+    # Romanized responses still include translation suffix from fake translator
+    assert "Key insight" in answer
+    assert "[ta]" in answer
+    assert f"{DISCLAIMER_EN}[ta]" in answer
+
+    safety = data["safety"]
+    assert all(
+        first_aid_instruction.endswith("[ta]")
+        for first_aid_instruction in safety["mental_health"]["first_aid"]
+    )

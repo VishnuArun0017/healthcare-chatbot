@@ -35,6 +35,7 @@ class ChatRequest(BaseModel):
     text: str
     lang: Literal["en", "hi", "ta", "te", "kn", "ml"] = "en"
     profile: Profile
+    debug: bool = False
 
     @field_validator("text")
     @classmethod
@@ -79,6 +80,7 @@ class ChatResponse(BaseModel):
     facts: List[Dict[str, Any]] = Field(default_factory=list)
     citations: List[Dict[str, Any]] = Field(default_factory=list)
     safety: Safety
+    metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
 class VoiceChatResponse(BaseModel):
