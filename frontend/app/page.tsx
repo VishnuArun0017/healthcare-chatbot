@@ -5,19 +5,23 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import {
   AlertTriangle,
+  Check,
   HeartPulse,
+  Menu,
   Mic,
   Phone,
   SendHorizonal,
   Settings,
+  Share2,
   Sparkle,
-  Menu,
   X,
 } from 'lucide-react';
 import ChatMessage, { type ChatMessageModel } from '../components/ChatMessage';
 import LoadingSkeleton from '../components/LoadingSkeleton';
 import ErrorCallout from '../components/ErrorCallout';
 import ProfileCard from '../components/ProfileCard';
+import TopicSuggestions from '../components/TopicSuggestions';
+import { TOPIC_CATEGORIES } from '../data/topics';
 import { CalendarDays, Heart, MapPin, Stethoscope } from 'lucide-react';
 
 type LangCode = 'en' | 'hi' | 'ta' | 'te' | 'kn' | 'ml';
@@ -150,6 +154,13 @@ export default function Home() {
   const audioChunksRef = useRef<Blob[]>([]);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const shareFeedbackTimeoutRef = useRef<number | null>(null);
+
+  const [shareFeedback, setShareFeedback] = useState<string | null>(null);
+
+  const quickSuggestionPrompts = useMemo(() => {
+    return TOPIC_CATEGORIES.flatMap((category) => category.suggestions.map((suggestion) => suggestion.prompt)).slice(0, 6);
+  }, []);
 
   const currentLanguage =
     LANGUAGE_OPTIONS.find((option) => option.value === lang) ?? LANGUAGE_OPTIONS[0];
@@ -185,6 +196,14 @@ export default function Home() {
     };
     container.addEventListener('scroll', handleScroll);
     return () => container.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (shareFeedbackTimeoutRef.current) {
+        clearTimeout(shareFeedbackTimeoutRef.current);
+      }
+    };
   }, []);
 
   const profileStats = useMemo(() => {
@@ -371,6 +390,65 @@ export default function Home() {
     setError(null);
   }, []);
 
+  const scheduleShareFeedback = useCallback((message: string | null, duration = 3200) => {
+    if (shareFeedbackTimeoutRef.current) {
+      clearTimeout(shareFeedbackTimeoutRef.current);
+      shareFeedbackTimeoutRef.current = null;
+    }
+    setShareFeedback(message);
+    if (message) {
+      shareFeedbackTimeoutRef.current = window.setTimeout(() => {
+        setShareFeedback(null);
+        shareFeedbackTimeoutRef.current = null;
+      }, duration);
+    }
+  }, []);
+
+  const handleQuickPrompt = useCallback(
+    (prompt: string) => {
+      void handleSend(prompt);
+    },
+    [handleSend]
+  );
+
+  const handleShareConversation = useCallback(async () => {
+    if (typeof navigator === 'undefined') {
+      scheduleShareFeedback('Sharing is unavailable in this environment.');
+      return;
+    }
+    const conversation = messages
+      .filter((entry) => entry.content.trim().length > 0)
+      .map((entry) => `${entry.role === 'assistant' ? 'Care Guide' : 'You'}: ${entry.content.trim()}`)
+      .join('\n\n');
+
+    if (!conversation) {
+      scheduleShareFeedback('Start a conversation to share the session.');
+      return;
+    }
+
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: 'WellNess care session',
+          text: conversation,
+        });
+        scheduleShareFeedback('Sharing sheet opened.');
+      } else if (navigator.clipboard) {
+        await navigator.clipboard.writeText(conversation);
+        scheduleShareFeedback('Conversation copied to clipboard.');
+      } else {
+        scheduleShareFeedback('Sharing is not supported in this browser.');
+      }
+    } catch (error) {
+      if ((error as Error).name === 'AbortError') {
+        scheduleShareFeedback('Share cancelled.');
+      } else {
+        console.error('Share error', error);
+        scheduleShareFeedback('Unable to share right now.');
+      }
+    }
+  }, [messages, scheduleShareFeedback]);
+
   const sidebarClasses = useMemo(
     () =>
       clsx(
@@ -490,6 +568,17 @@ export default function Home() {
               <span className="text-xs uppercase tracking-[0.32em] text-violet-300/70">Open</span>
             </button>
           </nav>
+
+          <TopicSuggestions
+            onSuggestionSelect={(prompt) => {
+              void handleSend(prompt);
+            }}
+            onAfterSelect={() => {
+              if (!isDesktop) {
+                setIsSidebarOpen(false);
+              }
+            }}
+          />
           </div>
       </aside>
 
@@ -537,9 +626,26 @@ export default function Home() {
               <h1 className="text-lg font-semibold text-white sm:text-xl">WellNess Health Companion</h1>
             </div>
               </div>
-              <div className="flex items-center gap-2 rounded-full border border-pink-400/40 bg-gradient-to-r from-pink-500 via-fuchsia-500 to-purple-500 px-4 py-1 text-sm font-medium text-white shadow-[0_0_25px_rgba(236,72,153,0.35)]">
-                <span className="flex h-2.5 w-2.5 animate-pulse rounded-full bg-white" />
-                Online
+              <div className="flex flex-col items-end gap-2 sm:flex-row sm:items-center sm:gap-3">
+                <div className="flex items-center gap-2 sm:gap-3">
+                  <button
+                    type="button"
+                    onClick={handleShareConversation}
+                    className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-slate-900/70 px-3 py-2 text-xs font-semibold text-slate-100 shadow-[0_0_25px_rgba(236,72,153,0.18)] transition hover:border-pink-300/70 hover:text-pink-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-pink-300"
+                  >
+                    <Share2 className="h-4 w-4" aria-hidden />
+                    Share
+                  </button>
+                  <div className="flex items-center gap-2 rounded-full border border-pink-400/40 bg-gradient-to-r from-pink-500 via-fuchsia-500 to-purple-500 px-4 py-1 text-sm font-medium text-white shadow-[0_0_25px_rgba(236,72,153,0.35)]">
+                    <span className="flex h-2.5 w-2.5 animate-pulse rounded-full bg-white" />
+                    Online
+                  </div>
+                </div>
+                {shareFeedback && (
+                  <p className="text-xs text-pink-200/80" aria-live="polite">
+                    {shareFeedback}
+                  </p>
+                )}
               </div>
         </header>
 
@@ -562,19 +668,17 @@ export default function Home() {
                   Share what’s on your mind—symptoms you’re noticing, questions about self-care, or worries about emergencies. I’ll
                   help you navigate next steps with calm, clinically aligned guidance.
                 </p>
-                <div className="grid gap-3 text-sm text-slate-200 sm:grid-cols-2">
-                  <div className="rounded-2xl border border-white/10 bg-slate-900/60 px-4 py-3 shadow-[0_18px_45px_rgba(236,72,153,0.12)]">
-                    • Describe how you feel right now
-            </div>
-                  <div className="rounded-2xl border border-white/10 bg-slate-900/60 px-4 py-3 shadow-[0_18px_45px_rgba(124,58,237,0.12)]">
-                    • Ask about at-home care and red flags
-          </div>
-                  <div className="rounded-2xl border border-white/10 bg-slate-900/60 px-4 py-3 shadow-[0_18px_45px_rgba(236,72,153,0.12)]">
-                    • Tell me about any ongoing conditions
-                  </div>
-                  <div className="rounded-2xl border border-white/10 bg-slate-900/60 px-4 py-3 shadow-[0_18px_45px_rgba(124,58,237,0.12)]">
-                    • Flag emergencies you want to double-check
-                  </div>
+                <div className="flex flex-wrap gap-2 text-sm text-slate-200">
+                  {quickSuggestionPrompts.map((prompt) => (
+                    <button
+                      key={prompt}
+                      type="button"
+                      onClick={() => handleQuickPrompt(prompt)}
+                      className="rounded-2xl border border-white/10 bg-slate-900/60 px-4 py-3 text-left shadow-[0_18px_45px_rgba(236,72,153,0.12)] transition hover:border-pink-300/60 hover:text-pink-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-pink-300"
+                    >
+                      {prompt}
+                    </button>
+                  ))}
                 </div>
                 <div className="flex items-start gap-3 rounded-2xl border border-pink-400/40 bg-gradient-to-r from-pink-500/20 via-fuchsia-500/10 to-purple-500/20 px-4 py-3 text-pink-100 shadow-[0_18px_45px_rgba(236,72,153,0.18)]">
                   <span className="mt-1 flex h-3 w-3 rounded-full bg-white/80" aria-hidden />

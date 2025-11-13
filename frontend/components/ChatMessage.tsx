@@ -10,6 +10,7 @@ import clsx from "clsx";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import "katex/dist/katex.min.css";
+import { Check, Copy, ExternalLink } from "lucide-react";
 interface CodeBlockProps {
   className?: string;
   children?: React.ReactNode;
@@ -82,6 +83,7 @@ export interface Citation {
   source?: string;
   topic?: string;
   url?: string;
+  id?: string;
 }
 
 export interface ChatMessageModel {
@@ -123,6 +125,8 @@ interface ChatMessageProps {
 
 function ChatMessage({ message, index }: ChatMessageProps) {
   const [formattedTime, setFormattedTime] = useState<string>("");
+  const [copiedCitationKey, setCopiedCitationKey] = useState<string | null>(null);
+  const citationCopyTimeoutRef = useRef<number | null>(null);
 
   const markdownComponents: Components = useMemo(() => ({
     a: ({ children, className, ...props }) => (
@@ -286,6 +290,46 @@ function ChatMessage({ message, index }: ChatMessageProps) {
     ),
   }), []);
 
+  const handleCopyCitation = useCallback(async (citation: Citation, idx: number) => {
+    const key = citation.id ?? `citation-${idx}`;
+    const title = citation.topic ?? citation.source ?? `Source ${idx + 1}`;
+    const detailLines: string[] = [];
+
+    if (citation.topic && citation.source) {
+      detailLines.push(`Source: ${citation.source}`);
+    } else if (!citation.topic && citation.source) {
+      detailLines.push(`Source: ${citation.source}`);
+    }
+
+    if (citation.id) {
+      detailLines.push(`Reference ID: ${citation.id}`);
+    }
+
+    if (citation.url) {
+      detailLines.push(`URL: ${citation.url}`);
+    }
+
+    const payload = [title, ...detailLines].join("\n");
+
+    try {
+      if (!navigator.clipboard) {
+        throw new Error("Clipboard not supported");
+      }
+      await navigator.clipboard.writeText(payload);
+      if (citationCopyTimeoutRef.current) {
+        clearTimeout(citationCopyTimeoutRef.current);
+      }
+      setCopiedCitationKey(key);
+      citationCopyTimeoutRef.current = window.setTimeout(() => {
+        setCopiedCitationKey(null);
+        citationCopyTimeoutRef.current = null;
+      }, 2400);
+    } catch (error) {
+      console.warn("Failed to copy citation", error);
+      setCopiedCitationKey(null);
+    }
+  }, []);
+
   useEffect(() => {
     try {
       const value = new Intl.DateTimeFormat("en-US", {
@@ -298,6 +342,14 @@ function ChatMessage({ message, index }: ChatMessageProps) {
       setFormattedTime(message.timestamp);
     }
   }, [message.timestamp]);
+
+  useEffect(() => {
+    return () => {
+      if (citationCopyTimeoutRef.current) {
+        clearTimeout(citationCopyTimeoutRef.current);
+      }
+    };
+  }, []);
 
   return (
     <article
@@ -364,8 +416,8 @@ function ChatMessage({ message, index }: ChatMessageProps) {
           )}
         >
           <ReactMarkdown
-            remarkPlugins={[remarkGfm, remarkMath]}
-            rehypePlugins={[rehypeKatex]}
+            remarkPlugins={[remarkGfm as any, remarkMath as any]}
+            rehypePlugins={[rehypeKatex as any]}
             components={markdownComponents}
           >
             {message.content}
@@ -374,34 +426,69 @@ function ChatMessage({ message, index }: ChatMessageProps) {
 
         {message.citations && message.citations.length > 0 && (
           <div className="mt-4 rounded-2xl border border-white/10 bg-slate-950/60 p-4 text-sm text-slate-100 shadow-[0_18px_45px_rgba(15,23,42,0.55)]">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-[0.32em] text-pink-200/80">
+            <p className="mb-3 text-xs font-semibold uppercase tracking-[0.32em] text-pink-200/80">
               Sources
             </p>
-            <ul className="flex flex-wrap gap-2">
+            <div className="space-y-3">
               {message.citations.map((citation, idx) => {
-                const label = citation.topic
-                  ? `${citation.topic}${citation.source ? ` (${citation.source})` : ""}`
-                  : citation.source ?? `Source ${idx + 1}`;
+                const key = citation.id ?? `citation-${idx}`;
+                const headline = citation.topic ?? citation.source ?? `Reference ${idx + 1}`;
+                const supporting: string[] = [];
+                if (citation.topic && citation.source) {
+                  supporting.push(citation.source);
+                }
+                if (!citation.topic && citation.source) {
+                  supporting.push(citation.source);
+                }
+                if (citation.id) {
+                  supporting.push(`ID: ${citation.id}`);
+                }
+
                 return (
-                  <li key={`${citation.url ?? label}-${idx}`}>
-                    {citation.url ? (
-                      <a
-                        href={citation.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-slate-900/80 px-3 py-1 text-xs font-semibold text-pink-200 transition hover:border-pink-300/60 hover:text-pink-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-pink-300"
-                      >
-                        {label}
-                      </a>
-                    ) : (
-                      <span className="inline-flex items-center rounded-full border border-white/10 bg-slate-900/70 px-3 py-1 text-xs font-semibold text-slate-200">
-                        {label}
-                      </span>
-                    )}
-                  </li>
+                  <div
+                    key={key}
+                    className="rounded-xl border border-white/10 bg-slate-900/70 p-4 shadow-[0_12px_30px_rgba(15,23,42,0.45)]"
+                  >
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="space-y-1">
+                        <p className="font-semibold text-slate-100">{headline}</p>
+                        {supporting.length > 0 && (
+                          <p className="text-xs text-slate-400">{supporting.join(' • ')}</p>
+                        )}
+                        {citation.url && !supporting.includes(citation.url) && (
+                          <p className="text-xs text-slate-500">{citation.url}</p>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleCopyCitation(citation, idx)}
+                          className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-slate-950/70 px-3 py-1.5 text-xs font-semibold text-slate-100 transition hover:border-pink-300/60 hover:text-pink-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-pink-300"
+                        >
+                          {copiedCitationKey === key ? (
+                            <Check className="h-4 w-4" aria-hidden />
+                          ) : (
+                            <Copy className="h-4 w-4" aria-hidden />
+                          )}
+                          {copiedCitationKey === key ? 'Copied' : 'Copy notes'}
+                        </button>
+                        {citation.url && (
+                          <a
+                            href={citation.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-2 rounded-full border border-transparent bg-gradient-to-r from-pink-500 via-fuchsia-500 to-purple-500 px-3 py-1.5 text-xs font-semibold text-white shadow-[0_10px_30px_rgba(236,72,153,0.35)] transition hover:scale-[1.02] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-pink-300"
+                          >
+                            <ExternalLink className="h-4 w-4" aria-hidden />
+                            Open
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 );
               })}
-            </ul>
+            </div>
           </div>
         )}
       </div>
