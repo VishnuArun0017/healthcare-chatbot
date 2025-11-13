@@ -507,7 +507,7 @@ export default function Home() {
           </button>
               <div>
               <p className="text-xs font-semibold uppercase tracking-[0.3em] text-ocean-500">Live care session</p>
-              <h1 className="text-lg font-semibold text-slate-800 sm:text-xl">Welcome to your Health Companion</h1>
+              <h1 className="text-lg font-semibold text-slate-800 sm:text-xl">WellNess Health Companion</h1>
             </div>
               </div>
               <div className="flex items-center gap-2 rounded-full border border-ocean-100 bg-ocean-50 px-4 py-1 text-sm font-medium text-ocean-700 shadow-sm">
