@@ -1,7 +1,7 @@
 'use client';
 
 import clsx from 'clsx';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import {
   AlertTriangle,
@@ -144,10 +144,12 @@ export default function Home() {
   const [isDesktop, setIsDesktop] = useState(false);
   const [profile, setProfile] = useState<Profile>(defaultProfile);
   const [profileLoading, setProfileLoading] = useState(true);
+  const [hasInteracted, setHasInteracted] = useState(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
 
   const currentLanguage =
     LANGUAGE_OPTIONS.find((option) => option.value === lang) ?? LANGUAGE_OPTIONS[0];
@@ -173,6 +175,17 @@ export default function Home() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
+
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    const handleScroll = () => {
+      if (!container) return;
+      container.dataset.scrolled = container.scrollTop > 24 ? 'true' : 'false';
+    };
+    container.addEventListener('scroll', handleScroll);
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, []);
 
   const profileStats = useMemo(() => {
     const chronicConditions = [
@@ -221,6 +234,8 @@ export default function Home() {
   const handleSend = async (overrides?: string) => {
     const messageText = (overrides ?? inputValue).trim();
     if (!messageText || isLoading) return;
+
+    setHasInteracted(true);
 
     const userMessage: ChatEntry = {
       id: createId(),
@@ -352,6 +367,10 @@ export default function Home() {
     setShowProfile(true);
   };
 
+  const handleDismissError = useCallback(() => {
+    setError(null);
+  }, []);
+
   const sidebarClasses = useMemo(
     () =>
       clsx(
@@ -365,7 +384,8 @@ export default function Home() {
     () =>
       clsx(
         'flex min-h-screen flex-col transition-[margin] duration-300',
-        isSidebarOpen ? 'lg:ml-72' : 'lg:ml-16'
+        isSidebarOpen ? 'lg:ml-72' : 'lg:ml-16',
+        'px-0 sm:px-0'
       ),
     [isSidebarOpen]
   );
@@ -411,6 +431,7 @@ export default function Home() {
         aria-label="Primary navigation"
         aria-hidden={!isSidebarOpen && isDesktop}
         id="primary-navigation"
+        data-overlay={isSidebarOpen && !isDesktop}
       >
         <div className="flex items-center gap-3">
           <span className="rounded-full bg-gradient-to-br from-pink-500 via-fuchsia-500 to-purple-500 p-2 text-white shadow-[0_0_25px_rgba(236,72,153,0.45)]">
@@ -430,7 +451,9 @@ export default function Home() {
             </p>
           </div>
 
-          {error && <ErrorCallout message={error} onDismiss={() => setError(null)} />}
+          {error && !hasInteracted && (
+            <ErrorCallout message={error} onDismiss={handleDismissError} />
+          )}
 
           <nav className="flex flex-col gap-3" aria-label="Quick actions">
             <button
@@ -569,7 +592,12 @@ export default function Home() {
                 aria-hidden
               />
               <div className="relative flex h-full flex-col">
-                <div className="flex-1 overflow-y-auto px-3 py-4 sm:px-5 lg:px-6">
+                <div
+                  ref={scrollContainerRef}
+                  className="flex-1 overflow-y-auto px-3 py-4 sm:px-5 lg:px-6"
+                  aria-live="polite"
+                  aria-busy={isLoading}
+                >
                   <div
                     className="mx-auto flex w-full flex-col gap-4 px-1 sm:px-2 lg:max-w-3xl lg:px-3"
                     role="list"
@@ -722,6 +750,16 @@ export default function Home() {
             )}
           </div>
         ))}
+        {isLoading && (
+                      <div className="space-y-4">
+                        <LoadingSkeleton count={1} />
+                      </div>
+                    )}
+                    {error && !isLoading && (
+                      <div className="mt-2">
+                        <ErrorCallout message={error} onDismiss={handleDismissError} />
+                      </div>
+                    )}
         <div ref={messagesEndRef} />
                   </div>
                 </div>

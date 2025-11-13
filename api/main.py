@@ -56,7 +56,7 @@ def _load_environment() -> None:
             loaded = True
     if not loaded:
         # Fallback to default behaviour (search current working directory / parents)
-load_dotenv()
+        load_dotenv()
 
 
 _load_environment()
@@ -1350,7 +1350,7 @@ def process_chat_request(request: ChatRequest) -> Tuple[ChatResponse, str, Dict[
                 response_style=response_style,
             )
             answer_en = FALLBACK_MESSAGE_EN
-    else:
+        else:
             localization_meta: Dict[str, Any] = {}
             localized_answer = localize_text(
                 answer_en,
