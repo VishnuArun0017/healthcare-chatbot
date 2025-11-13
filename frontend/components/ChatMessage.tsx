@@ -22,9 +22,10 @@ export interface ChatMessageModel {
 }
 
 const roleStyles: Record<ChatRole, string> = {
-  user: "bg-ocean-600 text-white shadow-glass border border-ocean-500",
+  user:
+    "border border-transparent bg-gradient-to-br from-fuchsia-500 via-pink-500 to-purple-500 text-white shadow-[0_22px_65px_rgba(236,72,153,0.35)]",
   assistant:
-    "bg-white/90 backdrop-blur-sm text-slate-800 border border-slate-200 shadow-lg",
+    "border border-white/10 bg-slate-900/70 backdrop-blur text-slate-100 shadow-[0_22px_65px_rgba(15,23,42,0.55)]",
 };
 
 const alignment: Record<ChatRole, string> = {
@@ -67,7 +68,7 @@ function ChatMessage({ message, index }: ChatMessageProps) {
     >
       <div
         className={clsx(
-          "max-w-[90%] rounded-3xl px-5 py-4 md:px-6 md:py-5 transition-all outline-none focus-visible:ring-4 focus-visible:ring-ocean-200/70",
+          "max-w-[90%] rounded-3xl px-5 py-4 md:px-6 md:py-5 transition-all outline-none focus-visible:ring-4 focus-visible:ring-pink-400/40",
           roleStyles[message.role]
         )}
         tabIndex={0}
@@ -76,8 +77,8 @@ function ChatMessage({ message, index }: ChatMessageProps) {
           className={clsx(
             "prose prose-sm md:prose-base max-w-none break-words",
             message.role === "user"
-              ? "prose-invert text-white [&_a]:text-mint-200"
-              : "prose-slate [&_code]:rounded [&_code]:bg-slate-100 [&_code]:px-1.5 [&_code]:py-0.5 [&_a]:text-ocean-600 [&_a:hover]:underline"
+              ? "prose-invert text-white [&_a]:text-pink-200"
+              : "prose-invert text-slate-100 [&_code]:rounded [&_code]:bg-white/10 [&_code]:px-1.5 [&_code]:py-0.5 [&_a]:text-pink-200 [&_a:hover]:text-pink-100"
           )}
         >
           <ReactMarkdown
@@ -99,8 +100,8 @@ function ChatMessage({ message, index }: ChatMessageProps) {
             className={clsx(
               "rounded-full border px-3 py-1",
               message.role === "assistant"
-                ? "border-ocean-200 text-ocean-500/80"
-                : "border-white/30 text-white/70"
+                ? "border-white/20 text-pink-200/80"
+                : "border-white/40 text-white/80"
             )}
           >
             {message.role === "assistant" ? "Assistant" : "You"}
@@ -108,7 +109,7 @@ function ChatMessage({ message, index }: ChatMessageProps) {
           <time
             className={clsx(
               "font-medium",
-              message.role === "assistant" ? "text-ocean-600/80" : "text-white/60"
+              message.role === "assistant" ? "text-pink-200/70" : "text-white/70"
             )}
             dateTime={message.timestamp}
             suppressHydrationWarning
@@ -118,8 +119,8 @@ function ChatMessage({ message, index }: ChatMessageProps) {
         </footer>
 
         {message.citations && message.citations.length > 0 && (
-          <div className="mt-4 rounded-2xl border border-ocean-100 bg-white/80 p-4 text-sm text-slate-600 shadow-md">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-[0.3em] text-ocean-400">
+          <div className="mt-4 rounded-2xl border border-white/10 bg-slate-950/60 p-4 text-sm text-slate-100 shadow-[0_18px_45px_rgba(15,23,42,0.55)]">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-[0.32em] text-pink-200/80">
               Sources
             </p>
             <ul className="flex flex-wrap gap-2">
@@ -134,12 +135,12 @@ function ChatMessage({ message, index }: ChatMessageProps) {
                         href={citation.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 rounded-full border border-ocean-100 bg-ocean-50 px-3 py-1 text-xs font-semibold text-ocean-600 transition hover:border-ocean-200 hover:bg-ocean-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ocean-300"
+                        className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-slate-900/80 px-3 py-1 text-xs font-semibold text-pink-200 transition hover:border-pink-300/60 hover:text-pink-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-pink-300"
                       >
                         {label}
                       </a>
                     ) : (
-                      <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+                      <span className="inline-flex items-center rounded-full border border-white/10 bg-slate-900/70 px-3 py-1 text-xs font-semibold text-slate-200">
                         {label}
                       </span>
                     )}
