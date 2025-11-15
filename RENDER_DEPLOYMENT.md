@@ -19,7 +19,7 @@ Render needs a `Procfile` to know how to start your application. Create this fil
 
 **File: `Procfile`** (in project root)
 ```
-web: cd api && uvicorn main:app --host 0.0.0.0 --port $PORT --workers 2
+web: uvicorn api.main:app --host 0.0.0.0 --port $PORT --workers 2
 ```
 
 > **Note**: Render automatically sets the `$PORT` environment variable. The `--workers 2` flag enables multiple worker processes for better performance.
@@ -36,12 +36,10 @@ services:
   - type: web
     name: healthcare-chatbot-api
     env: python
-    buildCommand: python3.11 -m pip install --upgrade pip setuptools wheel && python3.11 -m pip install --only-binary :all: pydantic pydantic-core && python3.11 -m pip install --prefer-binary -r api/requirements.txt
-    startCommand: cd api && uvicorn main:app --host 0.0.0.0 --port $PORT --workers 2
+    buildCommand: pip install -r api/requirements.txt
+    startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT --workers 2
     plan: starter  # or free, starter, standard, pro
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.11.0
       - key: ENVIRONMENT
         value: production
 ```
@@ -70,8 +68,8 @@ Fill in the following details:
 | **Branch** | `main` (or your default branch) |
 | **Root Directory** | Leave empty (or set to `api` if you want) |
 | **Runtime** | `Python 3` |
-| **Build Command** | `python3.11 -m pip install --upgrade pip setuptools wheel && python3.11 -m pip install --only-binary :all: pydantic pydantic-core && python3.11 -m pip install --prefer-binary -r api/requirements.txt` |
-| **Start Command** | `cd api && uvicorn main:app --host 0.0.0.0 --port $PORT --workers 2` |
+| **Build Command** | `pip install -r api/requirements.txt` |
+| **Start Command** | `uvicorn api.main:app --host 0.0.0.0 --port $PORT --workers 2` |
 
 > **Important**: 
 > - If you set **Root Directory** to `api`, adjust paths accordingly
@@ -359,12 +357,12 @@ If you encounter issues:
 
 ### Start Command (if Procfile not used):
 ```bash
-cd api && uvicorn main:app --host 0.0.0.0 --port $PORT --workers 2
+uvicorn api.main:app --host 0.0.0.0 --port $PORT --workers 2
 ```
 
 ### Build Command:
 ```bash
-python3.11 -m pip install --upgrade pip setuptools wheel && python3.11 -m pip install --only-binary :all: pydantic pydantic-core && python3.11 -m pip install --prefer-binary -r api/requirements.txt
+pip install -r api/requirements.txt
 ```
 
 ### Minimum Required Environment Variables:

@@ -17,8 +17,8 @@ When creating a new Web Service, enter these values:
 | **Branch** | `main` |
 | **Root Directory** | *(leave empty)* |
 | **Runtime** | `Python 3` |
-| **Build Command** | `python3.11 -m pip install --upgrade pip setuptools wheel && python3.11 -m pip install --only-binary :all: pydantic pydantic-core && python3.11 -m pip install --prefer-binary -r api/requirements.txt` |
-| **Start Command** | `cd api && uvicorn main:app --host 0.0.0.0 --port $PORT --workers 2` |
+| **Build Command** | `pip install -r api/requirements.txt` |
+| **Start Command** | `uvicorn api.main:app --host 0.0.0.0 --port $PORT --workers 2` |
 
 ---
 
