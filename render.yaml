@@ -2,16 +2,10 @@ services:
   - type: web
     name: healthcare-chatbot-api
     env: python
-    buildCommand: python3.11 -m pip install --upgrade pip setuptools wheel && python3.11 -m pip install --only-binary :all: pydantic pydantic-core && python3.11 -m pip install --prefer-binary -r api/requirements.txt
+    buildCommand: pip install -r api/requirements.txt
     startCommand: cd api && uvicorn main:app --host 0.0.0.0 --port $PORT --workers 2
     plan: starter
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.11.10
       - key: ENVIRONMENT
         value: production
-      - key: PIP_NO_BUILD_ISOLATION
-        value: "0"
-      - key: MATURIN_PEP517_ARGS
-        value: "--no-build-isolation"
 
