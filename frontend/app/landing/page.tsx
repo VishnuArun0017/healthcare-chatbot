@@ -4,6 +4,7 @@ import Image from "next/image";
 import clsx from "clsx";
 import AnimatedNumber from "../../components/AnimatedNumber";
 import HeroSection from "../../components/HeroSection";
+import StartPilotButton from "../../components/StartPilotButton";
 
 export const metadata: Metadata = {
   title: "Health Companion | Intelligent Care Guidance",
@@ -134,19 +135,19 @@ export default function LandingPage() {
       <div className={gradientSpot("bottom-[-6rem] right-[-10rem]", "bg-teal-500/30", "h-80 w-80")} />
 
       <header className="relative z-10 border-b border-white/5 bg-slate-950/60 backdrop-blur-xl">
-        <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-6 lg:px-10">
-          <div className="flex items-center gap-3">
-            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 via-green-500 to-teal-500 text-lg font-semibold text-white shadow-[0_15px_35px_rgba(16,185,129,0.35)]">
+        <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-4 sm:px-6 sm:py-5 md:py-6 lg:px-10">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 via-green-500 to-teal-500 text-sm font-semibold text-white shadow-[0_15px_35px_rgba(16,185,129,0.35)] sm:h-10 sm:w-10 sm:text-lg">
               HC
             </span>
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.32em] text-emerald-300/80">
+              <p className="text-[0.65rem] font-semibold uppercase tracking-[0.32em] text-emerald-300/80 sm:text-xs">
                 Health Companion
               </p>
-              <p className="text-sm font-semibold text-white">Care Intelligence Platform</p>
+              <p className="text-xs font-semibold text-white sm:text-sm">Care Intelligence Platform</p>
             </div>
           </div>
-          <nav className="hidden items-center gap-8 text-sm text-slate-200 sm:flex">
+          <nav className="hidden items-center gap-6 text-xs text-slate-200 md:flex md:gap-8 md:text-sm">
             <a className="hover:text-white" href="#features">
               Features
             </a>
@@ -160,16 +161,16 @@ export default function LandingPage() {
               Get Started
             </a>
           </nav>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
             <Link
               href="/landing#insights"
-              className="hidden rounded-full border border-white/10 px-4 py-2 text-sm font-medium text-slate-200 transition hover:border-white/30 hover:text-white sm:inline-flex"
+              className="hidden rounded-full border border-white/10 px-3 py-1.5 text-xs font-medium text-slate-200 transition hover:border-white/30 hover:text-white sm:inline-flex sm:px-4 sm:py-2 sm:text-sm"
             >
               View Insights
             </Link>
             <Link
               href="/auth"
-              className="inline-flex items-center gap-2 rounded-full bg-gradient-to-br from-emerald-500 via-green-500 to-teal-500 px-4 py-2 text-sm font-semibold text-white shadow-[0_18px_40px_rgba(16,185,129,0.35)] transition hover:scale-[1.03]"
+              className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-br from-emerald-500 via-green-500 to-teal-500 px-3 py-1.5 text-xs font-semibold text-white shadow-[0_18px_40px_rgba(16,185,129,0.35)] transition hover:scale-[1.03] sm:gap-2 sm:px-4 sm:py-2 sm:text-sm"
             >
               Get Started
             </Link>
@@ -180,20 +181,20 @@ export default function LandingPage() {
       <main className="relative z-10">
         <HeroSection />
 
-        <section id="features" className="mx-auto w-full max-w-6xl px-6 py-16 lg:px-10 lg:py-20">
-          <div className="mb-10 flex flex-col gap-4 text-center sm:text-left">
-            <p className="text-xs font-semibold uppercase tracking-[0.32em] text-emerald-200/80">Why teams choose us</p>
-            <h2 className="text-3xl font-semibold text-white sm:text-4xl">Features crafted for clinical-grade conversations.</h2>
-            <p className="max-w-3xl text-sm leading-relaxed text-slate-200/80">
+        <section id="features" className="mx-auto w-full max-w-6xl px-4 py-12 sm:px-6 sm:py-16 md:py-20 lg:px-10 lg:py-24">
+          <div className="mb-8 flex flex-col gap-3 text-center sm:mb-10 sm:gap-4 sm:text-left">
+            <p className="text-[0.65rem] font-semibold uppercase tracking-[0.32em] text-emerald-200/80 sm:text-xs">Why teams choose us</p>
+            <h2 className="text-2xl font-semibold text-white sm:text-3xl md:text-4xl">Features crafted for clinical-grade conversations.</h2>
+            <p className="max-w-3xl text-xs leading-relaxed text-slate-200/80 sm:text-sm">
               We blend AI expressiveness with deterministic checks. Every tile below represents an orchestrated system
               – not a lone model – ensuring safe, multi-lingual, empathetic care guidance.
             </p>
           </div>
-          <div className="grid gap-6 lg:grid-cols-3">
+          <div className="grid gap-4 sm:gap-6 md:grid-cols-2 lg:grid-cols-3">
             {features.map((feature) => (
               <article
                 key={feature.title}
-                className="relative flex h-full flex-col overflow-hidden rounded-[28px] border border-white/10 bg-slate-950/70 p-6 shadow-[0_30px_85px_rgba(15,23,42,0.55)] backdrop-blur-xl"
+                className="relative flex h-full flex-col overflow-hidden rounded-2xl border border-white/10 bg-slate-950/70 p-4 shadow-[0_30px_85px_rgba(15,23,42,0.55)] backdrop-blur-xl sm:rounded-3xl sm:p-5 md:rounded-[28px] md:p-6"
               >
                 <div
                   className={clsx(
@@ -202,9 +203,9 @@ export default function LandingPage() {
                   )}
                   aria-hidden
                 />
-                <h3 className="text-xl font-semibold text-white">{feature.title}</h3>
-                <p className="mt-3 text-sm leading-relaxed text-slate-200/80">{feature.description}</p>
-                <ul className="mt-5 space-y-3 text-sm text-slate-100/80">
+                <h3 className="text-lg font-semibold text-white sm:text-xl">{feature.title}</h3>
+                <p className="mt-2 text-xs leading-relaxed text-slate-200/80 sm:mt-3 sm:text-sm">{feature.description}</p>
+                <ul className="mt-4 space-y-2 text-xs text-slate-100/80 sm:mt-5 sm:space-y-3 sm:text-sm">
                   {feature.points.map((point) => (
                     <li key={point} className="flex items-start gap-2">
                       <span className="mt-1 inline-flex h-1.5 w-1.5 rounded-full bg-white/60" aria-hidden />
@@ -624,14 +625,9 @@ export default function LandingPage() {
                 round-the-clock guidance that feels human.
               </p>
               <div className="flex flex-wrap items-center justify-center gap-4 sm:justify-start">
+                <StartPilotButton className="inline-flex items-center gap-2 rounded-full bg-gradient-to-br from-emerald-500 via-green-500 to-teal-500 px-6 py-3 text-sm font-semibold text-white shadow-[0_22px_45px_rgba(16,185,129,0.35)] transition hover:scale-[1.05]" />
                 <Link
-                  href="/"
-                  className="inline-flex items-center gap-2 rounded-full bg-gradient-to-br from-emerald-500 via-green-500 to-teal-500 px-6 py-3 text-sm font-semibold text-white shadow-[0_22px_45px_rgba(16,185,129,0.35)] transition hover:scale-[1.05]"
-                >
-                  Start a pilot
-                </Link>
-                <Link
-                  href="mailto:hello@healthcompanion.ai"
+                  href="/team"
                   className="inline-flex items-center gap-2 rounded-full border border-white/15 px-6 py-3 text-sm font-semibold text-slate-200 transition hover:border-white/30 hover:text-white"
                 >
                   Talk to our team
@@ -646,6 +642,9 @@ export default function LandingPage() {
         <div className="mx-auto flex w-full max-w-6xl flex-col items-center justify-between gap-4 px-6 sm:flex-row lg:px-10">
           <p>© {new Date().getFullYear()} Health Companion. Crafted with care and safety in mind.</p>
           <div className="flex items-center gap-4">
+            <Link href="/team" className="hover:text-white">
+              Meet our team
+            </Link>
             <Link href="/privacy" className="hover:text-white">
               Privacy
             </Link>

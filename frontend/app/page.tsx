@@ -406,7 +406,7 @@ export default function Home() {
   const sidebarClasses = useMemo(
     () =>
       clsx(
-        'fixed inset-y-0 left-0 z-40 flex w-72 flex-col gap-6 overflow-y-auto border-r border-white/10 bg-slate-900/60 px-6 py-8 shadow-[0_0_60px_rgba(16,185,129,0.18)] transition-transform duration-300 backdrop-blur-xl lg:z-30 lg:bg-slate-900/50 lg:shadow-none',
+        'fixed inset-y-0 left-0 z-40 flex w-full max-w-xs flex-col gap-4 overflow-y-auto border-r border-white/10 bg-slate-900/60 px-4 py-6 shadow-[0_0_60px_rgba(16,185,129,0.18)] transition-transform duration-300 backdrop-blur-xl sm:w-72 sm:px-6 sm:py-8 md:gap-6 lg:z-30 lg:bg-slate-900/50 lg:shadow-none',
         isSidebarOpen ? 'translate-x-0 lg:translate-x-0' : '-translate-x-full lg:-translate-x-full'
       ),
     [isSidebarOpen]
@@ -687,54 +687,54 @@ export default function Home() {
       </div>
 
       <div className={mainLayoutClasses}>
-        <header className="flex items-center justify-between border-b border-white/10 bg-slate-900/60 px-4 py-4 shadow-[0_25px_60px_rgba(15,23,42,0.55)] backdrop-blur-lg sm:px-6 lg:px-10">
-          <div className="flex items-center gap-3">
+        <header className="flex items-center justify-between border-b border-white/10 bg-slate-900/60 px-3 py-3 shadow-[0_25px_60px_rgba(15,23,42,0.55)] backdrop-blur-lg sm:px-4 sm:py-4 md:px-6 lg:px-10">
+          <div className="flex items-center gap-2 sm:gap-3">
           <button
                 type="button"
               onClick={() => setIsSidebarOpen(true)}
               aria-expanded={isSidebarOpen}
               aria-controls="primary-navigation"
-              className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-slate-900/70 px-3 py-2 text-sm font-semibold text-slate-200 shadow-[0_0_25px_rgba(16,185,129,0.18)] transition hover:border-emerald-400/70 hover:text-emerald-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400 lg:hidden"
+              className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-slate-900/70 px-2.5 py-1.5 text-xs font-semibold text-slate-200 shadow-[0_0_25px_rgba(16,185,129,0.18)] transition hover:border-emerald-400/70 hover:text-emerald-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400 sm:gap-2 sm:px-3 sm:py-2 sm:text-sm lg:hidden"
             >
-              <Menu className="h-4 w-4" aria-hidden />
-              <span>Menu</span>
+              <Menu className="h-3.5 w-3.5 sm:h-4 sm:w-4" aria-hidden />
+              <span className="hidden xs:inline">Menu</span>
           </button>
               <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.32em] text-emerald-300/75">Live care session</p>
-              <h1 className="text-lg font-semibold text-white sm:text-xl">WellNess Health Companion</h1>
+              <p className="text-[0.65rem] font-semibold uppercase tracking-[0.32em] text-emerald-300/75 sm:text-xs">Live care session</p>
+              <h1 className="text-base font-semibold text-white sm:text-lg md:text-xl">WellNess Health Companion</h1>
             </div>
               </div>
-              <div className="flex flex-col items-end gap-2 sm:flex-row sm:items-center sm:gap-3">
+              <div className="flex flex-col items-end gap-1.5 sm:flex-row sm:items-center sm:gap-2 md:gap-3">
                 <div className="flex items-center gap-2 sm:gap-3">
                   <button
                     type="button"
                     onClick={() => setShowPreferences(true)}
-                    className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-slate-900/70 px-3 py-2 text-xs font-semibold text-slate-100 shadow-[0_0_25px_rgba(16,185,129,0.18)] transition hover:border-emerald-400/70 hover:text-emerald-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300"
+                    className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-slate-900/70 px-2 py-1.5 text-[0.65rem] font-semibold text-slate-100 shadow-[0_0_25px_rgba(16,185,129,0.18)] transition hover:border-emerald-400/70 hover:text-emerald-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300 sm:gap-2 sm:px-3 sm:py-2 sm:text-xs"
                     title="Session preferences"
                   >
-                    <Settings className="h-4 w-4" aria-hidden />
+                    <Settings className="h-3.5 w-3.5 sm:h-4 sm:w-4" aria-hidden />
                     <span className="hidden sm:inline">Preferences</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => setShowSafety(true)}
-                    className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-slate-900/70 px-3 py-2 text-xs font-semibold text-slate-100 shadow-[0_0_25px_rgba(34,197,94,0.18)] transition hover:border-green-400/70 hover:text-green-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-300"
+                    className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-slate-900/70 px-2 py-1.5 text-[0.65rem] font-semibold text-slate-100 shadow-[0_0_25px_rgba(34,197,94,0.18)] transition hover:border-green-400/70 hover:text-green-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-300 sm:gap-2 sm:px-3 sm:py-2 sm:text-xs"
                     title="Safety guidance"
                   >
-                    <HeartPulse className="h-4 w-4" aria-hidden />
+                    <HeartPulse className="h-3.5 w-3.5 sm:h-4 sm:w-4" aria-hidden />
                     <span className="hidden sm:inline">Safety</span>
                   </button>
                   <button
                     type="button"
                     onClick={handleShareConversation}
-                    className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-slate-900/70 px-3 py-2 text-xs font-semibold text-slate-100 shadow-[0_0_25px_rgba(16,185,129,0.18)] transition hover:border-emerald-300/70 hover:text-emerald-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300"
+                    className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-slate-900/70 px-2 py-1.5 text-[0.65rem] font-semibold text-slate-100 shadow-[0_0_25px_rgba(16,185,129,0.18)] transition hover:border-emerald-300/70 hover:text-emerald-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300 sm:gap-2 sm:px-3 sm:py-2 sm:text-xs"
                   >
-                    <Share2 className="h-4 w-4" aria-hidden />
+                    <Share2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" aria-hidden />
                     <span className="hidden sm:inline">Share</span>
                   </button>
-                  <div className="flex items-center gap-2 rounded-full border border-emerald-400/40 bg-gradient-to-r from-emerald-500 via-green-500 to-teal-500 px-4 py-1 text-sm font-medium text-white shadow-[0_0_25px_rgba(16,185,129,0.35)]">
-                    <span className="flex h-2.5 w-2.5 animate-pulse rounded-full bg-white" />
-                    Online
+                  <div className="flex items-center gap-1.5 rounded-full border border-emerald-400/40 bg-gradient-to-r from-emerald-500 via-green-500 to-teal-500 px-2.5 py-1 text-[0.65rem] font-medium text-white shadow-[0_0_25px_rgba(16,185,129,0.35)] sm:gap-2 sm:px-4 sm:py-1 sm:text-sm">
+                    <span className="flex h-2 w-2 animate-pulse rounded-full bg-white sm:h-2.5 sm:w-2.5" />
+                    <span className="hidden xs:inline">Online</span>
                   </div>
                 </div>
                 {shareFeedback && (
@@ -745,23 +745,23 @@ export default function Home() {
               </div>
         </header>
 
-        <main className="flex-1 px-4 pb-32 pt-6 sm:px-6 lg:px-10">
-          <div className="mx-auto flex h-full max-w-4xl flex-col gap-6">
+        <main className="flex-1 px-3 pb-28 pt-4 sm:px-4 sm:pb-32 sm:pt-6 md:px-6 lg:px-10">
+          <div className="mx-auto flex h-full max-w-4xl flex-col gap-4 sm:gap-6">
             {messages.length === 0 && (
-              <section className="relative overflow-hidden rounded-[30px] border border-white/10 bg-slate-900/60 px-5 py-6 shadow-[0_35px_90px_rgba(15,23,42,0.65)] backdrop-blur-xl sm:px-6 lg:px-8">
+              <section className="relative overflow-hidden rounded-2xl border border-white/10 bg-slate-900/60 px-4 py-5 shadow-[0_35px_90px_rgba(15,23,42,0.65)] backdrop-blur-xl sm:rounded-[30px] sm:px-5 sm:py-6 md:px-6 lg:px-8">
                 <div
                   className="absolute inset-y-0 right-0 w-[55%] opacity-60 blur-3xl bg-gradient-to-br from-emerald-500 via-green-500 to-teal-500"
                   aria-hidden
                 />
-                <div className="relative flex flex-col gap-5">
-                  <div className="flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.32em] text-emerald-300/80">
-                    <span className="flex h-2 w-2 rounded-full bg-emerald-400" aria-hidden />
+                <div className="relative flex flex-col gap-4 sm:gap-5">
+                  <div className="flex items-center gap-2 text-[0.65rem] font-semibold uppercase tracking-[0.32em] text-emerald-300/80 sm:gap-3 sm:text-xs">
+                    <span className="flex h-1.5 w-1.5 rounded-full bg-emerald-400 sm:h-2 sm:w-2" aria-hidden />
                     Ready when you are
                   </div>
-                  <h2 className="text-3xl font-bold text-white sm:text-4xl lg:text-5xl">
+                  <h2 className="text-2xl font-bold text-white sm:text-3xl md:text-4xl lg:text-5xl">
                     How can I care for you today?
                   </h2>
-                  <p className="max-w-3xl text-sm leading-relaxed text-slate-200 sm:text-base">
+                  <p className="max-w-3xl text-xs leading-relaxed text-slate-200 sm:text-sm md:text-base">
                     Share what's on your mind—symptoms you're noticing, questions about self-care, or worries about emergencies. I'll
                     help you navigate next steps with calm, clinically aligned guidance.
                   </p>
@@ -968,7 +968,7 @@ export default function Home() {
 
         <div className={bottomBarClasses} style={{ pointerEvents: 'none' }}>
           <form
-            className="mx-auto flex w-full max-w-4xl flex-wrap items-center gap-4 rounded-[32px] border border-white/10 bg-slate-900/70 px-4 py-4 shadow-[0_28px_80px_rgba(16,185,129,0.25)] backdrop-blur-xl sm:flex-nowrap sm:px-6"
+            className="mx-auto flex w-full max-w-4xl flex-wrap items-center gap-2.5 rounded-2xl border border-white/10 bg-slate-900/70 px-3 py-3 shadow-[0_28px_80px_rgba(16,185,129,0.25)] backdrop-blur-xl sm:flex-nowrap sm:gap-4 sm:rounded-[32px] sm:px-4 sm:py-4 md:px-6"
             style={{ pointerEvents: 'auto' }}
             onSubmit={(event) => {
               event.preventDefault();
@@ -985,7 +985,7 @@ export default function Home() {
                 }
               }}
               className={clsx(
-                'flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-full text-sm font-semibold shadow-[0_18px_45px_rgba(16,185,129,0.35)] transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2',
+                'flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full text-xs font-semibold shadow-[0_18px_45px_rgba(16,185,129,0.35)] transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 sm:h-14 sm:w-14 md:h-16 md:w-16 md:text-sm',
                 isRecording
                   ? 'border border-red-400/60 bg-red-500 text-white focus-visible:outline-red-300'
                   : 'border border-transparent bg-gradient-to-br from-emerald-500 via-green-500 to-teal-500 text-white hover:scale-[1.03] focus-visible:outline-emerald-300'
@@ -994,38 +994,38 @@ export default function Home() {
               aria-label={isRecording ? 'Stop recording' : 'Start voice recording'}
             >
               {isRecording ? (
-                <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.3em]">
-                  <span className="inline-flex h-2.5 w-2.5 animate-pulse rounded-full bg-white" aria-hidden />
+                <span className="flex items-center gap-1.5 text-[0.65rem] font-semibold uppercase tracking-[0.3em] sm:gap-2 sm:text-xs">
+                  <span className="inline-flex h-2 w-2 animate-pulse rounded-full bg-white sm:h-2.5 sm:w-2.5" aria-hidden />
                   REC
                 </span>
               ) : (
-                <Mic className="h-5 w-5" />
+                <Mic className="h-4 w-4 sm:h-5 sm:w-5" />
               )}
             </button>
 
-            <div className="relative flex-1">
+            <div className="relative flex-1 min-w-0">
               <textarea
                 value={inputValue}
                 onChange={(event) => setInputValue(event.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder={selectedPlaceholder}
-                rows={3}
-                className="min-h-[80px] w-full resize-none rounded-2xl border border-white/10 bg-transparent px-4 py-3 text-sm leading-relaxed text-slate-100 shadow-inner shadow-black/20 transition placeholder:text-slate-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400/80"
+                rows={2}
+                className="min-h-[60px] w-full resize-none rounded-xl border border-white/10 bg-transparent px-3 py-2 text-xs leading-relaxed text-slate-100 shadow-inner shadow-black/20 transition placeholder:text-slate-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400/80 sm:min-h-[80px] sm:rounded-2xl sm:px-4 sm:py-3 sm:text-sm sm:rows-3"
                 aria-label="Write your question"
                 disabled={isLoading}
               />
-              <span className="pointer-events-none absolute bottom-3 right-4 text-xs text-slate-500">
+              <span className="pointer-events-none absolute bottom-2 right-3 text-[0.65rem] text-slate-500 sm:bottom-3 sm:right-4 sm:text-xs">
                 Shift + Enter for new line
               </span>
             </div>
 
             <button
               type="submit"
-              className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-full border border-transparent bg-gradient-to-br from-green-500 via-emerald-500 to-teal-500 text-white shadow-[0_18px_45px_rgba(16,185,129,0.35)] transition hover:scale-[1.05] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300"
+              className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full border border-transparent bg-gradient-to-br from-green-500 via-emerald-500 to-teal-500 text-white shadow-[0_18px_45px_rgba(16,185,129,0.35)] transition hover:scale-[1.05] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300 sm:h-14 sm:w-14"
               disabled={isLoading}
               aria-label="Send message"
             >
-              <SendHorizonal className={clsx('h-5 w-5', isLoading ? 'animate-pulse' : '')} aria-hidden />
+              <SendHorizonal className={clsx('h-4 w-4 sm:h-5 sm:w-5', isLoading ? 'animate-pulse' : '')} aria-hidden />
             </button>
           </form>
         </div>
