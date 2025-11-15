@@ -27,7 +27,7 @@ const teamMembers: TeamMember[] = [
     description: 'Dedicated and detail-oriented engineer committed to building robust systems. Combines technical expertise with a collaborative spirit to deliver exceptional results.',
   },
   {
-    name: 'Tarun',
+    name: 'Tarun T',
     image: '/tarun.jpeg',
     linkedinUrl: 'https://www.linkedin.com/in/tarun-thimmayan-9301b9290',
     description: 'Creative problem-solver with a strong foundation in software engineering. Passionate about leveraging technology to solve real-world healthcare challenges.',
