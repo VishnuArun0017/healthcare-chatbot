@@ -84,9 +84,6 @@ export default function HeroSection() {
                         style={{ height: `${value}%` }}
                       />
                     </div>
-                    <span className="text-[0.55rem] font-semibold uppercase tracking-[0.32em] text-emerald-200/80 sm:text-[0.6rem]">
-                      wk{index + 1}
-                    </span>
                   </div>
                 ))}
               </div>

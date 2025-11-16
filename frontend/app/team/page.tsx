@@ -114,7 +114,40 @@ export default function TeamPage() {
         </div>
       </header>
 
-      <main className="relative z-10 mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 sm:py-12 md:px-8 md:py-16 lg:px-10 lg:py-20">
+			<main className="relative z-10 mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 sm:py-12 md:px-8 md:py-16 lg:px-10 lg:py-20">
+				{/* Hero intro */}
+				<section className="mb-8 rounded-[28px] border border-white/10 bg-gradient-to-br from-slate-900/70 via-slate-950 to-slate-900/80 p-6 shadow-[0_35px_90px_rgba(15,23,42,0.55)] backdrop-blur-xl sm:p-8">
+					<div className={clsx(
+						"flex flex-col gap-3 sm:gap-4 transition-all duration-700",
+						headerVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2"
+					)}>
+						<p className="text-[0.65rem] font-semibold uppercase tracking-[0.32em] text-emerald-200/80 sm:text-xs">
+							Talk to our team
+						</p>
+						<h2 className="text-2xl font-semibold text-white sm:text-3xl md:text-4xl">
+							We build compassionate, safety-first healthcare experiences.
+						</h2>
+						<p className="max-w-3xl text-sm leading-relaxed text-slate-200/80 sm:text-base">
+							Let’s collaborate on clinical-grade assistants, multilingual care journeys, and delightful patient tools. 
+							We move fast, keep humans in the loop, and obsess over outcomes.
+						</p>
+						<div className="mt-2 flex flex-wrap items-center gap-3">
+							<a
+								href="mailto:admin@wellness.com"
+								className="inline-flex items-center gap-2 rounded-full bg-gradient-to-br from-emerald-500 via-green-500 to-teal-500 px-4 py-2 text-xs font-semibold text-white shadow-[0_18px_40px_rgba(16,185,129,0.35)] transition hover:scale-[1.03] sm:text-sm"
+							>
+								Email us
+							</a>
+							<Link
+								href="/auth"
+								className="inline-flex items-center gap-2 rounded-full border border-white/15 px-4 py-2 text-xs font-semibold text-slate-200 transition hover:border-white/30 hover:text-white sm:text-sm"
+							>
+								Start a pilot
+							</Link>
+						</div>
+					</div>
+				</section>
+
         <div className="space-y-12 sm:space-y-16 md:space-y-20">
           {/* Animated background gradient for visual appeal */}
           <div className="pointer-events-none fixed inset-0 -z-0 opacity-30">
@@ -232,6 +265,41 @@ export default function TeamPage() {
           );
           })}
         </div>
+
+				{/* Contact panel */}
+				<section className="mt-16">
+					<div className="rounded-[28px] border border-white/10 bg-slate-900/70 p-6 shadow-[0_35px_90px_rgba(15,23,42,0.55)] backdrop-blur-xl sm:p-8">
+						<div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+							<div>
+								<p className="text-[0.65rem] font-semibold uppercase tracking-[0.32em] text-emerald-200/80 sm:text-xs">
+									Get in touch
+								</p>
+								<h3 className="mt-2 text-xl font-semibold text-white sm:text-2xl">
+									Let’s design your next care experience.
+								</h3>
+								<p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-200/80">
+									We can help with safety guardrails, retrieval orchestration, graph fallbacks, and multilingual UX—all production-ready.
+								</p>
+							</div>
+							<div className="flex flex-wrap items-center gap-3">
+								<a
+									href="mailto:admin@wellness.com?subject=Let's talk about Health Companion"
+									className="inline-flex items-center gap-2 rounded-full bg-gradient-to-br from-emerald-500 via-green-500 to-teal-500 px-4 py-2 text-xs font-semibold text-white shadow-[0_18px_40px_rgba(16,185,129,0.35)] transition hover:scale-[1.03] sm:text-sm"
+								>
+									Email our team
+								</a>
+								<a
+									href="https://www.linkedin.com/company/"
+									target="_blank"
+									rel="noopener noreferrer"
+									className="inline-flex items-center gap-2 rounded-full border border-white/15 px-4 py-2 text-xs font-semibold text-slate-200 transition hover:border-white/30 hover:text-white sm:text-sm"
+								>
+									Connect on LinkedIn
+								</a>
+							</div>
+						</div>
+					</div>
+				</section>
       </main>
     </div>
   );

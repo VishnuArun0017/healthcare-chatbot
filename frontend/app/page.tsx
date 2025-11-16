@@ -599,7 +599,8 @@ export default function Home() {
   const sidebarClasses = useMemo(
     () =>
       clsx(
-        'fixed inset-y-0 left-0 z-40 flex w-full max-w-xs flex-col gap-4 border-r border-white/10 bg-slate-900/60 px-4 py-6 shadow-[0_0_60px_rgba(16,185,129,0.18)] transition-transform duration-300 backdrop-blur-xl sm:w-72 sm:px-6 sm:py-8 md:gap-6 lg:z-30 lg:bg-slate-900/50 lg:shadow-none',
+        // Unify mobile and desktop sidebar width/feel to match laptop layout
+        'fixed inset-y-0 left-0 z-40 flex w-72 flex-col gap-4 border-r border-white/10 bg-slate-900/60 px-4 py-6 shadow-[0_0_60px_rgba(16,185,129,0.18)] transition-transform duration-300 backdrop-blur-xl sm:w-72 sm:px-6 sm:py-8 md:gap-6 lg:z-30 lg:bg-slate-900/50 lg:shadow-none',
         isSidebarOpen ? 'translate-x-0 lg:translate-x-0' : '-translate-x-full lg:-translate-x-full'
       ),
     [isSidebarOpen]
@@ -868,17 +869,21 @@ export default function Home() {
         id="primary-navigation"
         data-overlay={isSidebarOpen && !isDesktop}
       >
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 pt-14 sm:pt-0 sm:flex">
           <span className="rounded-full bg-gradient-to-br from-emerald-500 via-green-500 to-teal-500 p-2 text-white shadow-[0_0_25px_rgba(16,185,129,0.45)]">
             <Sparkle className="h-5 w-5" aria-hidden />
           </span>
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.32em] text-emerald-300/80">Wellness mode</p>
-            <p className="text-base font-semibold text-white">Care Console</p>
+          <div className="flex-1 min-w-0">
+            <p className="mt-1 sm:mt-0 text-[0.65rem] sm:text-xs font-semibold uppercase tracking-[0.32em] text-emerald-300/80 whitespace-normal break-words leading-tight">
+              Wellness mode
+            </p>
+            <p className="text-sm sm:text-base font-semibold text-white whitespace-normal break-words leading-tight">
+              Care Console
+            </p>
           </div>
         </div>
 
-        <div className="flex-1 flex flex-col min-h-0 pt-2">
+        <div className="flex-1 flex flex-col min-h-0 pt-8 sm:pt-4">
           <div className="flex-shrink-0">
             <button
               type="button"
@@ -1004,7 +1009,7 @@ export default function Home() {
           )}
         </div>
 
-        <div className="flex-shrink-0 mt-auto border-t border-white/10 pt-4">
+        <div className="flex-shrink-0 mt-auto border-t border-white/10 pt-4 pb-36 sm:pb-0">
           <div className="flex items-center gap-3 px-3 py-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 via-green-500 to-teal-500 text-xs font-semibold text-white">
               <User className="h-4 w-4" />
@@ -1074,8 +1079,11 @@ export default function Home() {
               <span className="hidden xs:inline">Menu</span>
           </button>
               <div>
-              <p className="text-[0.65rem] font-semibold uppercase tracking-[0.32em] text-emerald-300/75 sm:text-xs">Live care session</p>
-              <h1 className="text-base font-semibold text-white sm:text-lg md:text-xl">WellNess Health Companion</h1>
+              <p className="hidden text-[0.65rem] font-semibold uppercase tracking-[0.32em] text-emerald-300/75 sm:block sm:text-xs">Live care session</p>
+              <h1 className="text-base font-semibold text-white sm:text-lg md:text-xl">
+                <span className="sm:hidden">WellNess AI</span>
+                <span className="hidden sm:inline">WellNess Health Companion</span>
+              </h1>
             </div>
               </div>
               <div className="flex flex-col items-end gap-1.5 sm:flex-row sm:items-center sm:gap-2 md:gap-3">
@@ -1098,14 +1106,7 @@ export default function Home() {
                     <HeartPulse className="h-3.5 w-3.5 sm:h-4 sm:w-4" aria-hidden />
                     <span className="hidden sm:inline">Safety</span>
                   </button>
-                  <button
-                    type="button"
-                    onClick={handleShareConversation}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-slate-900/70 px-2 py-1.5 text-[0.65rem] font-semibold text-slate-100 shadow-[0_0_25px_rgba(16,185,129,0.18)] transition hover:border-emerald-300/70 hover:text-emerald-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300 sm:gap-2 sm:px-3 sm:py-2 sm:text-xs"
-                  >
-                    <Share2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" aria-hidden />
-                    <span className="hidden sm:inline">Share</span>
-                  </button>
+                  {/* Share button removed per request */}
                   <button
                     type="button"
                     onClick={toggleNarration}
@@ -1134,10 +1135,7 @@ export default function Home() {
                     <X className="h-3.5 w-3.5 sm:h-4 sm:w-4" aria-hidden />
                     <span className="hidden sm:inline">Stop</span>
                   </button>
-                  <div className="flex items-center gap-1.5 rounded-full border border-emerald-400/40 bg-gradient-to-r from-emerald-500 via-green-500 to-teal-500 px-2.5 py-1 text-[0.65rem] font-medium text-white shadow-[0_0_25px_rgba(16,185,129,0.35)] sm:gap-2 sm:px-4 sm:py-1 sm:text-sm">
-                    <span className="flex h-2 w-2 animate-pulse rounded-full bg-white sm:h-2.5 sm:w-2.5" />
-                    <span className="hidden xs:inline">Online</span>
-                  </div>
+                  {/* Online status chip removed per request */}
                 </div>
                 {shareFeedback && (
                   <p className="text-xs text-emerald-200/80" aria-live="polite">
@@ -1377,33 +1375,7 @@ export default function Home() {
               void handleSend();
             }}
           >
-            <button
-              type="button"
-              onClick={() => {
-                if (isRecording) {
-                  stopRecording();
-                } else {
-                  void startRecording();
-                }
-              }}
-              className={clsx(
-                'flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full text-xs font-semibold shadow-[0_18px_45px_rgba(16,185,129,0.35)] transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 sm:h-14 sm:w-14 md:h-16 md:w-16 md:text-sm',
-                isRecording
-                  ? 'border border-red-400/60 bg-red-500 text-white focus-visible:outline-red-300'
-                  : 'border border-transparent bg-gradient-to-br from-emerald-500 via-green-500 to-teal-500 text-white hover:scale-[1.03] focus-visible:outline-emerald-300'
-              )}
-              aria-pressed={isRecording}
-              aria-label={isRecording ? 'Stop recording' : 'Start voice recording'}
-            >
-              {isRecording ? (
-                <span className="flex items-center gap-1.5 text-[0.65rem] font-semibold uppercase tracking-[0.3em] sm:gap-2 sm:text-xs">
-                  <span className="inline-flex h-2 w-2 animate-pulse rounded-full bg-white sm:h-2.5 sm:w-2.5" aria-hidden />
-                  REC
-                </span>
-              ) : (
-                <Mic className="h-4 w-4 sm:h-5 sm:w-5" />
-              )}
-            </button>
+            
 
             <div className="relative flex-1 min-w-0">
               <textarea

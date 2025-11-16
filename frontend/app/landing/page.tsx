@@ -177,11 +177,6 @@ const techStack = [
     details:
       "Knowledge graph of contraindications, providers, and red-flag rules powering deterministic answers when LLMs defer.",
   },
-  {
-    name: "Audio Stack",
-    details:
-      "Whisper multilingual STT, ElevenLabs + gTTS TTS, and noise suppression tuned for remote consultations.",
-  },
 ];
 
 const dataHighlights = [
