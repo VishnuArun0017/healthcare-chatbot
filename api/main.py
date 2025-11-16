@@ -154,12 +154,21 @@ async def _shutdown() -> None:
     await db_client.disconnect()
     logger.info("Database connections closed")
 
+# CORS Configuration
+# Parse CORS_ORIGINS from environment variable, allowing multiple origins separated by commas
+# Default includes localhost for development
+cors_origins_str = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:3001")
+# Clean and split origins, handling spaces
+cors_origins = [origin.strip() for origin in cors_origins_str.split(",") if origin.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:3001").split(","),
+    allow_origins=cors_origins,  # Specific origins from environment variable
+    allow_origin_regex=r"https://.*\.vercel\.app",  # Allow all Vercel preview and production deployments
     allow_credentials=True,  # Required for HTTP-only cookies
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],  # Explicitly include OPTIONS
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 class SimpleRateLimiter:
