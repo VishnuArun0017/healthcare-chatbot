@@ -15,9 +15,14 @@ logger = logging.getLogger("health_assistant")
 
 # Check if we're in production for secure cookie settings
 IS_PRODUCTION = os.getenv("ENVIRONMENT", "development").lower() == "production"
-# For development, use "lax" samesite, for production use "lax" or "strict"
-# Note: "none" requires secure=True (HTTPS), so we use "lax" for both
-SAMESITE_POLICY = "lax" if IS_PRODUCTION else "lax"
+# For cross-origin requests (Vercel frontend to Render backend), we need samesite="none" with secure=True
+# "none" is required for cross-origin cookies, and it always requires secure=True (HTTPS)
+# In production (deployed environments), both frontend and backend are HTTPS, so use "none"
+# In local development, if using localhost, we can use "lax" or "none" with secure=False
+USE_CROSS_ORIGIN = os.getenv("USE_CROSS_ORIGIN_COOKIES", "true").lower() == "true"
+SAMESITE_POLICY = "none" if (IS_PRODUCTION or USE_CROSS_ORIGIN) else "lax"
+# When samesite="none", secure must be True. In production, always True. In dev, True if cross-origin
+SECURE_COOKIE = IS_PRODUCTION or USE_CROSS_ORIGIN
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
@@ -54,13 +59,13 @@ async def register(
         # Create tokens
         tokens = await auth_service.create_tokens(user)
         
-        # Set HTTP-only cookies with secure flag in production
+        # Set HTTP-only cookies with secure flag for cross-origin support
         response.set_cookie(
             key="access_token",
             value=tokens["access_token"],
             httponly=True,  # Client-side JavaScript cannot access
-            secure=IS_PRODUCTION,  # Only send over HTTPS in production
-            samesite=SAMESITE_POLICY,
+            secure=SECURE_COOKIE,  # Required for samesite="none" (cross-origin)
+            samesite=SAMESITE_POLICY,  # "none" for cross-origin, "lax" for same-origin
             max_age=30 * 60,  # 30 minutes
             path="/",  # Ensure cookie is available for all paths
         )
@@ -69,8 +74,8 @@ async def register(
             key="refresh_token",
             value=tokens["refresh_token"],
             httponly=True,  # Client-side JavaScript cannot access
-            secure=IS_PRODUCTION,  # Only send over HTTPS in production
-            samesite=SAMESITE_POLICY,
+            secure=SECURE_COOKIE,  # Required for samesite="none" (cross-origin)
+            samesite=SAMESITE_POLICY,  # "none" for cross-origin, "lax" for same-origin
             max_age=7 * 24 * 60 * 60,  # 7 days
             path="/",  # Ensure cookie is available for all paths
         )
@@ -113,13 +118,13 @@ async def login(
         # Create tokens
         tokens = await auth_service.create_tokens(user)
         
-        # Set HTTP-only cookies with secure flag in production
+        # Set HTTP-only cookies with secure flag for cross-origin support
         response.set_cookie(
             key="access_token",
             value=tokens["access_token"],
             httponly=True,  # Client-side JavaScript cannot access
-            secure=IS_PRODUCTION,  # Only send over HTTPS in production
-            samesite=SAMESITE_POLICY,
+            secure=SECURE_COOKIE,  # Required for samesite="none" (cross-origin)
+            samesite=SAMESITE_POLICY,  # "none" for cross-origin, "lax" for same-origin
             max_age=30 * 60,  # 30 minutes
             path="/",  # Ensure cookie is available for all paths
         )
@@ -128,8 +133,8 @@ async def login(
             key="refresh_token",
             value=tokens["refresh_token"],
             httponly=True,  # Client-side JavaScript cannot access
-            secure=IS_PRODUCTION,  # Only send over HTTPS in production
-            samesite=SAMESITE_POLICY,
+            secure=SECURE_COOKIE,  # Required for samesite="none" (cross-origin)
+            samesite=SAMESITE_POLICY,  # "none" for cross-origin, "lax" for same-origin
             max_age=7 * 24 * 60 * 60,  # 7 days
             path="/",  # Ensure cookie is available for all paths
         )
@@ -165,9 +170,9 @@ async def logout(
             # Revoke refresh token
             await auth_service.revoke_refresh_token(refresh_token)
         
-        # Clear cookies
-        response.delete_cookie(key="access_token", httponly=True, secure=IS_PRODUCTION, samesite="lax")
-        response.delete_cookie(key="refresh_token", httponly=True, secure=IS_PRODUCTION, samesite="lax")
+        # Clear cookies with same settings as when they were set
+        response.delete_cookie(key="access_token", httponly=True, secure=SECURE_COOKIE, samesite=SAMESITE_POLICY)
+        response.delete_cookie(key="refresh_token", httponly=True, secure=SECURE_COOKIE, samesite=SAMESITE_POLICY)
         
         return {"message": "Logged out successfully"}
     
@@ -279,13 +284,13 @@ async def refresh_token(
         # Create new access token
         tokens = await auth_service.create_tokens(user_data)
         
-        # Set new access token cookie with secure flag in production
+        # Set new access token cookie with secure flag for cross-origin support
         response.set_cookie(
             key="access_token",
             value=tokens["access_token"],
             httponly=True,  # Client-side JavaScript cannot access
-            secure=IS_PRODUCTION,  # Only send over HTTPS in production
-            samesite=SAMESITE_POLICY,
+            secure=SECURE_COOKIE,  # Required for samesite="none" (cross-origin)
+            samesite=SAMESITE_POLICY,  # "none" for cross-origin, "lax" for same-origin
             max_age=30 * 60,  # 30 minutes
             path="/",  # Ensure cookie is available for all paths
         )
